@@ -206,5 +206,3 @@ docker-compose restart
 | Servers |  |  Router  |
 +---------+  +----------+
 ```
-
-## Contributing
