@@ -114,7 +114,8 @@ def get_data():
 def create_charts():
     """Output chart definitions"""
     for chart_id, chart in CHARTS.items():
-        print(f"CHART {chart[0] or chart_id} '{chart[1]}' '{chart[2]}' '{chart[3]}' '{chart[4]}' {chart[5]}")
+        opts = chart['options']
+        print(f"CHART {opts[0] or chart_id} '{opts[1]}' '{opts[2]}' '{opts[3]}' '{opts[4]}' {opts[5]}")
         for line in chart['lines']:
             print(f"DIMENSION {line[0]} '{line[1]}' {line[2]}")
 
