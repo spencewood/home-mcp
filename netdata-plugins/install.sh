@@ -26,16 +26,31 @@ if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
     exit 1
 fi
 
-# Check if plugin directory exists
+# Check if plugin directory exists in repo
 if [ ! -d "$REPO_PLUGINS_DIR" ]; then
     echo "ERROR: Plugin directory '$REPO_PLUGINS_DIR' not found"
     echo "Make sure you're running this from your repo root"
     exit 1
 fi
 
-# Create custom-plugins directory if it doesn't exist
-echo "Creating custom plugins directory..."
-mkdir -p "$PLUGINS_DIR"
+# Check if plugins directory exists
+if [ ! -d "$PLUGINS_DIR" ]; then
+    echo "ERROR: Plugins directory '$PLUGINS_DIR' does not exist"
+    echo ""
+    echo "Create it first with:"
+    echo "  sudo mkdir -p $PLUGINS_DIR"
+    echo "  sudo chown -R \$USER:\$USER $PLUGINS_DIR"
+    exit 1
+fi
+
+# Check if we can write to plugins directory
+if [ ! -w "$PLUGINS_DIR" ]; then
+    echo "ERROR: Cannot write to '$PLUGINS_DIR'"
+    echo ""
+    echo "Fix permissions with:"
+    echo "  sudo chown -R \$USER:\$USER $PLUGINS_DIR"
+    exit 1
+fi
 
 # Copy plugins
 echo "Copying blockchain monitoring plugins..."
