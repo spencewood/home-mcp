@@ -125,8 +125,6 @@ def update_charts(data):
 def main():
     """Main plugin loop"""
     # Output update interval
-    print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
-    print("DIMENSION octez_monitor octez_monitor absolute 1 1")
     
     # Create charts
     create_charts()
@@ -144,8 +142,6 @@ def main():
         
         # Calculate execution time
         exec_time = int((time.time() - start_time) * 1000)
-        print("BEGIN netdata.plugin_pythond")
-        print(f"SET octez_monitor = {exec_time}")
         print("END")
         
         sys.stdout.flush()
