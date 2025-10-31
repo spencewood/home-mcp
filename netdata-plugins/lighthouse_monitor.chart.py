@@ -217,7 +217,7 @@ def main():
     """Main plugin loop"""
     # Output update interval
     print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
-    print("DIMENSION lighthouse_monitor 'lighthouse monitor' absolute 1 1")
+    print("DIMENSION lighthouse_monitor lighthouse_monitor absolute 1 1")
     
     # Create charts
     create_charts()

@@ -193,7 +193,7 @@ def main():
     
     # Output update interval
     print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
-    print("DIMENSION helium_monitor 'helium monitor' absolute 1 1")
+    print("DIMENSION helium_monitor helium_monitor absolute 1 1")
     
     # Create charts
     create_charts()
