@@ -20,7 +20,7 @@ STATE_FILE = "/tmp/netdata_blockchain_earnings.pkl"
 # Chart definitions
 CHARTS = {
     'eth_earnings_rate': {
-        'options': [None, 'Ethereum_Earnings_Rate', 'gwei/hour', 'earnings', 'eth.earnings_rate', 'line'],
+        'options': [None, 'Ethereum_Earnings_Rate', 'gwei_per_hour', 'earnings', 'eth.earnings_rate', 'line'],
         'lines': [
             ['eth_hourly_rate', 'gwei per hour', 'absolute']
         ]

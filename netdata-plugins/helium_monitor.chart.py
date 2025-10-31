@@ -37,13 +37,13 @@ CHARTS = {
         ]
     },
     'helium_rewards_24h': {
-        'options': [None, 'Helium Rewards (24h)', 'HNT bones', 'earnings', 'helium.rewards_24h', 'line'],
+        'options': [None, 'Helium_Rewards_24h', 'HNT_bones', 'earnings', 'helium.rewards_24h', 'line'],
         'lines': [
             ['rewards_24h', 'rewards 24h', 'absolute']
         ]
     },
     'helium_rewards_30d': {
-        'options': [None, 'Helium Rewards (30d)', 'HNT bones', 'earnings', 'helium.rewards_30d', 'line'],
+        'options': [None, 'Helium_Rewards_30d', 'HNT_bones', 'earnings', 'helium.rewards_30d', 'line'],
         'lines': [
             ['rewards_30d', 'rewards 30d', 'absolute']
         ]

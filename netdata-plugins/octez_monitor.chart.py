@@ -16,9 +16,9 @@ UPDATE_EVERY = 10  # seconds (Tezos blocks are slower)
 # Chart definitions
 CHARTS = {
     'octez_sync': {
-        'options': [None, 'Octez_Sync_Status', 'blocks behind', 'sync', 'octez.sync', 'line'],
+        'options': [None, 'Octez_Sync_Status', 'blocks_behind', 'sync', 'octez.sync', 'line'],
         'lines': [
-            ['blocks_behind', 'blocks behind', 'absolute']
+            ['blocks_behind', 'blocks_behind', 'absolute']
         ]
     },
     'octez_peers': {
@@ -28,7 +28,7 @@ CHARTS = {
         ]
     },
     'octez_head': {
-        'options': [None, 'Octez Chain Head', 'block level', 'chain', 'octez.head', 'line'],
+        'options': [None, 'Octez Chain Head', 'block_level', 'chain', 'octez.head', 'line'],
         'lines': [
             ['level', 'level', 'absolute']
         ]

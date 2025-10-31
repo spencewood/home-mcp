@@ -28,7 +28,7 @@ CHARTS = {
         ]
     },
     'reth_chain': {
-        'options': [None, 'Reth_Chain_Head', 'block number', 'chain', 'reth.chain', 'line'],
+        'options': [None, 'Reth_Chain_Head', 'block_number', 'chain', 'reth.chain', 'line'],
         'lines': [
             ['head_block', 'head_block', 'absolute']
         ]
