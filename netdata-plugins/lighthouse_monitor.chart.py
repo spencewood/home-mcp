@@ -17,13 +17,13 @@ UPDATE_EVERY = 5  # seconds
 # Chart definitions
 CHARTS = {
     'lighthouse_sync': {
-        'options': [None, 'Lighthouse Sync Status', 'slots behind', 'sync', 'lighthouse.sync', 'line'],
+        'options': [None, 'Lighthouse_Sync_Status', 'slots_behind', 'sync', 'lighthouse.sync', 'line'],
         'lines': [
-            ['slots_behind', 'slots behind', 'absolute']
+            ['slots_behind', 'slots_behind', 'absolute']
         ]
     },
     'lighthouse_peers': {
-        'options': [None, 'Lighthouse Peer Count', 'peers', 'network', 'lighthouse.peers', 'line'],
+        'options': [None, 'Lighthouse_Peer_Count', 'peers', 'network', 'lighthouse.peers', 'line'],
         'lines': [
             ['connected_peers', 'connected peers', 'absolute']
         ]

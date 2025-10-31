@@ -25,9 +25,9 @@ CHARTS = {
         ]
     },
     'helium_block_height': {
-        'options': [None, 'Helium Block Height', 'blocks', 'sync', 'helium.block_height', 'line'],
+        'options': [None, 'Helium_Block_Height', 'blocks', 'sync', 'helium.block_height', 'line'],
         'lines': [
-            ['block_height', 'block height', 'absolute']
+            ['block_height', 'block_height', 'absolute']
         ]
     },
     'helium_witnesses': {

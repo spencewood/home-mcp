@@ -16,27 +16,27 @@ UPDATE_EVERY = 5  # seconds
 # Chart definitions
 CHARTS = {
     'reth_sync': {
-        'options': [None, 'Reth Sync Status', 'boolean', 'sync', 'reth.sync', 'line'],
+        'options': [None, 'Reth_Sync_Status', 'boolean', 'sync', 'reth.sync', 'line'],
         'lines': [
             ['syncing', 'syncing', 'absolute']
         ]
     },
     'reth_peers': {
-        'options': [None, 'Reth Peer Count', 'peers', 'network', 'reth.peers', 'line'],
+        'options': [None, 'Reth_Peer_Count', 'peers', 'network', 'reth.peers', 'line'],
         'lines': [
-            ['active_peers', 'active peers', 'absolute']
+            ['active_peers', 'active_peers', 'absolute']
         ]
     },
     'reth_chain': {
-        'options': [None, 'Reth Chain Head', 'block number', 'chain', 'reth.chain', 'line'],
+        'options': [None, 'Reth_Chain_Head', 'block number', 'chain', 'reth.chain', 'line'],
         'lines': [
-            ['head_block', 'head block', 'absolute']
+            ['head_block', 'head_block', 'absolute']
         ]
     },
     'reth_gas': {
-        'options': [None, 'Reth Gas Usage', 'gas', 'chain', 'reth.gas', 'line'],
+        'options': [None, 'Reth_Gas_Usage', 'gas', 'chain', 'reth.gas', 'line'],
         'lines': [
-            ['gas_used', 'gas used', 'absolute']
+            ['gas_used', 'gas_used', 'absolute']
         ]
     }
 }
@@ -138,7 +138,7 @@ def main():
     """Main plugin loop"""
     # Output update interval
     print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
-    print("DIMENSION reth_monitor 'reth monitor' absolute 1 1")
+    print("DIMENSION reth_monitor 'reth_monitor' absolute 1 1")
     
     # Create charts
     create_charts()
