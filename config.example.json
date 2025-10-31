@@ -1,0 +1,42 @@
+{
+  "servers": {
+    "server1": {
+      "netdata_url": "http://server1.local:19999",
+      "role": "compute",
+      "description": "High-performance compute node for specialized workloads",
+      "hardware_notes": "32GB RAM, bonded network interfaces"
+    },
+    "server2": {
+      "netdata_url": "http://server2.local:19999",
+      "role": "services_hub",
+      "description": "Application services, monitoring stack, automation tools",
+      "hardware_notes": "8GB RAM"
+    },
+    "server3": {
+      "netdata_url": "http://server3.local:19999",
+      "role": "gateway",
+      "description": "Reverse proxy, DNS services, edge services",
+      "hardware_notes": "4GB RAM"
+    },
+    "server4": {
+      "netdata_url": "http://server4.local:19999",
+      "role": "storage",
+      "description": "Network-attached storage for data and backups",
+      "hardware_notes": "NAS appliance"
+    }
+  },
+  "mikrotik": {
+    "enabled": true,
+    "model": "YOUR_MODEL_HERE",
+    "description": "Primary router for network infrastructure",
+    "host": "192.168.x.x",
+    "port": 8729,
+    "username": "mcp-read",
+    "password": "YOUR_PASSWORD_HERE"
+  },
+  "context": {
+    "location": "Home Lab",
+    "monitoring_strategy": "Automated health checks with alert notifications on failures",
+    "notes": "Example homelab configuration"
+  }
+}

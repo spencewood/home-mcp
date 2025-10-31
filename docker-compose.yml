@@ -1,0 +1,13 @@
+services:
+  home-mcp:
+    build: .
+    container_name: home-mcp
+    network_mode: host
+
+    volumes:
+      - ./config.json:/app/config.json:ro
+
+    stdin_open: true
+    tty: true
+
+    restart: "no"

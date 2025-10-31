@@ -1,0 +1,8 @@
+config.json
+*.secret
+__pycache__/
+*.pyc
+logs/
+.env
+*.swp
+.DS_Store
