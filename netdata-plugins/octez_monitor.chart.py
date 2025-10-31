@@ -22,19 +22,19 @@ CHARTS = {
         ]
     },
     'octez_peers': {
-        'options': [None, 'Octez Connected Peers', 'peers', 'network', 'octez.peers', 'line'],
+        'options': ['octez.peers', 'Octez_Connected_Peers', 'peers', 'network', 'octez.peers', 'line'],
         'lines': [
             ['connected', 'connected', 'absolute']
         ]
     },
     'octez_head': {
-        'options': [None, 'Octez Chain Head', 'block_level', 'chain', 'octez.head', 'line'],
+        'options': ['octez.head', 'Octez_Chain_Head', 'block_level', 'chain', 'octez.head', 'line'],
         'lines': [
             ['level', 'level', 'absolute']
         ]
     },
     'octez_operations': {
-        'options': [None, 'Octez Operations in Head', 'operations', 'chain', 'octez.operations', 'line'],
+        'options': ['octez.operations', 'Octez_Operations_in_Head', 'operations', 'chain', 'octez.operations', 'line'],
         'lines': [
             ['operations', 'operations', 'absolute']
         ]

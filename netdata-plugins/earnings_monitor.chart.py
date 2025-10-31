@@ -26,31 +26,31 @@ CHARTS = {
         ]
     },
     'eth_balance_change': {
-        'options': [None, 'Ethereum Balance Change', 'gwei', 'earnings', 'eth.balance_change', 'line'],
+        'options': ['eth.balance_change', 'Ethereum_Balance_Change', 'gwei', 'earnings', 'eth.balance_change', 'line'],
         'lines': [
             ['eth_balance_diff', 'balance change', 'absolute']
         ]
     },
     'eth_daily_estimate': {
-        'options': [None, 'Ethereum Daily Earnings Estimate', 'ETH', 'earnings', 'eth.daily_estimate', 'line'],
+        'options': ['eth.daily_estimate', 'Ethereum_Daily_Earnings_Estimate', 'ETH', 'earnings', 'eth.daily_estimate', 'line'],
         'lines': [
             ['eth_daily_eth', 'ETH per day', 'absolute', 1, 1000000000]  # Convert gwei to ETH
         ]
     },
     'tezos_earnings_rate': {
-        'options': [None, 'Tezos Earnings Rate', 'mutez/hour', 'earnings', 'tezos.earnings_rate', 'line'],
+        'options': ['tezos.earnings_rate', 'Tezos_Earnings_Rate', 'mutez/hour', 'earnings', 'tezos.earnings_rate', 'line'],
         'lines': [
             ['tezos_hourly_rate', 'mutez per hour', 'absolute']
         ]
     },
     'tezos_balance_change': {
-        'options': [None, 'Tezos Balance Change', 'mutez', 'earnings', 'tezos.balance_change', 'line'],
+        'options': ['tezos.balance_change', 'Tezos_Balance_Change', 'mutez', 'earnings', 'tezos.balance_change', 'line'],
         'lines': [
             ['tezos_balance_diff', 'balance change', 'absolute']
         ]
     },
     'tezos_daily_estimate': {
-        'options': [None, 'Tezos Daily Earnings Estimate', 'XTZ', 'earnings', 'tezos.daily_estimate', 'line'],
+        'options': ['tezos.daily_estimate', 'Tezos_Daily_Earnings_Estimate', 'XTZ', 'earnings', 'tezos.daily_estimate', 'line'],
         'lines': [
             ['tezos_daily_xtz', 'XTZ per day', 'absolute', 1, 1000000]  # Convert mutez to XTZ
         ]

@@ -29,33 +29,33 @@ CHARTS = {
         ]
     },
     'lighthouse_attestations': {
-        'options': [None, 'Validator Attestations', 'attestations', 'validator', 'lighthouse.attestations', 'line'],
+        'options': ['lighthouse.attestations', 'Validator_Attestations', 'attestations', 'validator', 'lighthouse.attestations', 'line'],
         'lines': [
             ['successful', 'successful', 'absolute'],
             ['failed', 'failed', 'absolute']
         ]
     },
     'lighthouse_validator_balance': {
-        'options': [None, 'Validator Balance', 'gwei', 'validator', 'lighthouse.balance', 'line'],
+        'options': ['lighthouse.balance', 'Validator_Balance', 'gwei', 'validator', 'lighthouse.balance', 'line'],
         'lines': [
             ['total_balance', 'total balance', 'absolute']
         ]
     },
     'lighthouse_proposals': {
-        'options': [None, 'Block Proposals', 'proposals', 'validator', 'lighthouse.proposals', 'line'],
+        'options': ['lighthouse.proposals', 'Block_Proposals', 'proposals', 'validator', 'lighthouse.proposals', 'line'],
         'lines': [
             ['successful_proposals', 'successful', 'absolute'],
             ['failed_proposals', 'failed', 'absolute']
         ]
     },
     'lighthouse_sync_committee': {
-        'options': [None, 'Sync Committee Participation', 'contributions', 'validator', 'lighthouse.sync_committee', 'line'],
+        'options': ['lighthouse.sync_committee', 'Sync_Committee_Participation', 'contributions', 'validator', 'lighthouse.sync_committee', 'line'],
         'lines': [
             ['sync_committee_messages', 'messages', 'absolute']
         ]
     },
     'lighthouse_head': {
-        'options': [None, 'Beacon Chain Head', 'slot', 'chain', 'lighthouse.head', 'line'],
+        'options': ['lighthouse.head', 'Beacon_Chain_Head', 'slot', 'chain', 'lighthouse.head', 'line'],
         'lines': [
             ['head_slot', 'head slot', 'absolute']
         ]

@@ -18,7 +18,7 @@ UPDATE_EVERY = 60  # Check every minute (API rate limits apply)
 # Chart definitions
 CHARTS = {
     'helium_status': {
-        'options': [None, 'Helium Hotspot Status', 'status', 'status', 'helium.status', 'line'],
+        'options': ['helium.status', 'Helium_Hotspot_Status', 'status', 'status', 'helium.status', 'line'],
         'lines': [
             ['online', 'online', 'absolute'],
             ['synced', 'synced', 'absolute']
@@ -31,7 +31,7 @@ CHARTS = {
         ]
     },
     'helium_witnesses': {
-        'options': [None, 'Helium Witness Activity', 'witnesses', 'activity', 'helium.witnesses', 'line'],
+        'options': ['helium.witnesses', 'Helium_Witness_Activity', 'witnesses', 'activity', 'helium.witnesses', 'line'],
         'lines': [
             ['witness_count', 'witness count', 'absolute']
         ]
@@ -49,7 +49,7 @@ CHARTS = {
         ]
     },
     'helium_challenger_activity': {
-        'options': [None, 'Helium Challenger Activity (24h)', 'challenges', 'activity', 'helium.challenger', 'line'],
+        'options': ['helium.challenger', 'Helium_Challenger_Activity_24h', 'challenges', 'activity', 'helium.challenger', 'line'],
         'lines': [
             ['challenges_24h', 'challenges', 'absolute']
         ]
