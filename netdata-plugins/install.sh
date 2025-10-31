@@ -9,7 +9,7 @@ echo ""
 
 # Configuration
 CONTAINER_NAME="netdata"
-PLUGINS_DIR="/mnt/docker/volumes/netdataconfig/_data/custom-plugins"
+PLUGINS_DIR="/mnt/docker/volumes/netdataconfig/_data/custom-plugins.d"
 REPO_PLUGINS_DIR="./netdata-plugins"
 
 # Check if user is in docker group
@@ -37,9 +37,7 @@ fi
 if [ ! -d "$PLUGINS_DIR" ]; then
     echo "ERROR: Plugins directory '$PLUGINS_DIR' does not exist"
     echo ""
-    echo "Create it first with:"
-    echo "  sudo mkdir -p $PLUGINS_DIR"
-    echo "  sudo chown -R \$USER:\$USER $PLUGINS_DIR"
+    echo "This is unexpected - it should exist in your netdata config volume"
     exit 1
 fi
 
