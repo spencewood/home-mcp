@@ -25,7 +25,7 @@ CHARTS = {
         ]
     },
     'helium_block_height': {
-        'options': [None, 'Helium_Block_Height', 'blocks', 'sync', 'helium.block_height', 'line'],
+        'options': ['helium.height', 'Helium_Block_Height', 'blocks', 'sync', 'helium.block_height', 'line'],
         'lines': [
             ['block_height', 'block_height', 'absolute']
         ]
@@ -37,13 +37,13 @@ CHARTS = {
         ]
     },
     'helium_rewards_24h': {
-        'options': [None, 'Helium_Rewards_24h', 'HNT_bones', 'earnings', 'helium.rewards_24h', 'line'],
+        'options': ['helium.rewards_24h', 'Helium_Rewards_24h', 'HNT_bones', 'earnings', 'helium.rewards_24h', 'line'],
         'lines': [
             ['rewards_24h', 'rewards 24h', 'absolute']
         ]
     },
     'helium_rewards_30d': {
-        'options': [None, 'Helium_Rewards_30d', 'HNT_bones', 'earnings', 'helium.rewards_30d', 'line'],
+        'options': ['helium.rewards_30d', 'Helium_Rewards_30d', 'HNT_bones', 'earnings', 'helium.rewards_30d', 'line'],
         'lines': [
             ['rewards_30d', 'rewards 30d', 'absolute']
         ]

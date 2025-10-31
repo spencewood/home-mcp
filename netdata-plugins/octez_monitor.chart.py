@@ -16,7 +16,7 @@ UPDATE_EVERY = 10  # seconds (Tezos blocks are slower)
 # Chart definitions
 CHARTS = {
     'octez_sync': {
-        'options': [None, 'Octez_Sync_Status', 'blocks_behind', 'sync', 'octez.sync', 'line'],
+        'options': ['octez.sync', 'Octez_Sync_Status', 'blocks_behind', 'sync', 'octez.sync', 'line'],
         'lines': [
             ['blocks_behind', 'blocks_behind', 'absolute']
         ]
