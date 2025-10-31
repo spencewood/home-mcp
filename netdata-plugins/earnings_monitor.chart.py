@@ -233,10 +233,10 @@ def create_charts():
     """Output chart definitions"""
     for chart_id, chart in CHARTS.items():
         options = chart['options']
-        print(f"CHART {options[0] or chart_id} '{options[1]}' '{options[2]}' '{options[3]}' '{options[4]}' {options[5]}")
+        print(f"CHART {options[0] or chart_id} {options[1]} {options[2]} {options[3]} {options[4]} {options[5]}")
         for line in chart['lines']:
             dim_args = ' '.join(str(x) for x in line[2:])
-            print(f"DIMENSION {line[0]} '{line[1]}' {dim_args}")
+            print(f"DIMENSION {line[0]} {line[1]} {dim_args}")
 
 
 def update_charts(data):
@@ -256,7 +256,7 @@ def update_charts(data):
 def main():
     """Main plugin loop"""
     # Output update interval
-    print(f"CHART netdata.plugin_pythond '' 'Execution time' 'milliseconds' 'plugins' 'netdata.plugin_python' line 145000 {UPDATE_EVERY}")
+    print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
     print("DIMENSION earnings_monitor 'earnings monitor' absolute 1 1")
     
     # Create charts

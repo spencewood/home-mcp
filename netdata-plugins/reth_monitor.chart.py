@@ -115,9 +115,9 @@ def create_charts():
     """Output chart definitions"""
     for chart_id, chart in CHARTS.items():
         opts = chart['options']
-        print(f"CHART {opts[0] or chart_id} '{opts[1]}' '{opts[2]}' '{opts[3]}' '{opts[4]}' {opts[5]}")
+        print(f"CHART {opts[0] or chart_id} {opts[1]} {opts[2]} {opts[3]} {opts[4]} {opts[5]}")
         for line in chart['lines']:
-            print(f"DIMENSION {line[0]} '{line[1]}' {line[2]}")
+            print(f"DIMENSION {line[0]} {line[1]} {line[2]}")
 
 
 def update_charts(data):
@@ -137,7 +137,7 @@ def update_charts(data):
 def main():
     """Main plugin loop"""
     # Output update interval
-    print(f"CHART netdata.plugin_pythond '' 'Execution time' 'milliseconds' 'plugins' 'netdata.plugin_python' line 145000 {UPDATE_EVERY}")
+    print(f"CHART netdata.plugin_pythond Execution_time milliseconds plugins netdata.plugin_python line 145000 {UPDATE_EVERY}")
     print("DIMENSION reth_monitor 'reth monitor' absolute 1 1")
     
     # Create charts
