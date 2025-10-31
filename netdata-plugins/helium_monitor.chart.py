@@ -176,7 +176,8 @@ def update_charts(data):
         return
     
     for chart_id in CHARTS.keys():
-        print(f"BEGIN {chart_id}")
+        chart_name = CHARTS[chart_id]["options"][0]
+        print(f"BEGIN {chart_name}")
         for line in CHARTS[chart_id]['lines']:
             dim_id = line[0]
             value = data.get(dim_id, 0)
