@@ -92,65 +92,117 @@ async def query_dozzle_sse():
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as resp:
                 if resp.status == 200:
-                    # Read first SSE message which contains containers-changed event
-                    content = await resp.content.read(100000)  # Read up to 100KB
-                    text = content.decode('utf-8')
+                    # Read the SSE stream line by line to find the containers-changed event
+                    buffer = b''
+                    async for chunk in resp.content.iter_chunked(4096):
+                        buffer += chunk
+                        # Look for complete SSE message
+                        text = buffer.decode('utf-8', errors='ignore')
 
-                    # Parse SSE format: "event: containers-changed\ndata: {...}\n\n"
-                    if 'data: ' in text:
-                        data_start = text.find('data: ') + 6
-                        data_end = text.find('\n', data_start)
-                        if data_end == -1:
-                            data_end = len(text)
-                        json_str = text[data_start:data_end]
-                        return json.loads(json_str)
-                    else:
-                        return {'error': 'No data in SSE stream'}
+                        if 'event: containers-changed' in text and 'data: [' in text:
+                            # Extract just the JSON array
+                            data_start = text.find('data: [') + 6
+                            # Find the end of this data block (double newline marks end of SSE message)
+                            data_end = text.find('\n\n', data_start)
+                            if data_end == -1:
+                                # Not complete yet, keep reading
+                                continue
+
+                            json_str = text[data_start:data_end].strip()
+
+                            try:
+                                containers_full = json.loads(json_str)
+
+                                # Extract only essential fields to avoid huge response
+                                containers_minimal = []
+                                for container in containers_full:
+                                    containers_minimal.append({
+                                        'id': container.get('id'),
+                                        'name': container.get('name'),
+                                        'image': container.get('image'),
+                                        'state': container.get('state'),
+                                        'health': container.get('health'),
+                                        'host': container.get('host'),
+                                        'created': container.get('created'),
+                                        'startedAt': container.get('startedAt')
+                                        # Deliberately excluding 'stats' and 'labels' which are huge
+                                    })
+
+                                return containers_minimal
+                            except json.JSONDecodeError as e:
+                                return {'error': f'JSON parse error: {str(e)}', 'raw_length': len(json_str)}
+
+                        # If buffer gets too large, something is wrong
+                        if len(buffer) > 500000:  # 500KB limit
+                            return {'error': 'Response too large'}
+
+                    return {'error': 'No containers-changed event found in stream'}
                 else:
                     return {'error': f'HTTP {resp.status}'}
     except asyncio.TimeoutError:
         return {'error': 'Request timed out'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Exception: {str(e)}'}
 
 async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
     """Query logs for a specific container from Dozzle"""
     if not CONFIG.get('dozzle', {}).get('enabled'):
         return {'error': 'Dozzle not enabled in config'}
 
+    # Limit tail to reasonable size
+    tail = min(tail, 500)  # Max 500 lines
+
     dozzle_url = CONFIG['dozzle']['url']
-    # Use the actual Dozzle API format: /api/hosts/{host}/containers/{id}/logs
+    # Use the actual Dozzle API format: /api/hosts/{host}/containers/{id}/logs/stream
     url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs/stream"
 
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                 if resp.status == 200:
-                    # Read SSE stream for a short time to get recent logs
-                    content = await resp.content.read(50000)  # Read up to 50KB
-                    text = content.decode('utf-8')
-
-                    # Parse SSE log messages
+                    # Parse SSE log messages as they stream in
                     logs = []
-                    for line in text.split('\n'):
-                        if line.startswith('data: '):
-                            try:
-                                log_entry = json.loads(line[6:])
-                                logs.append(log_entry)
-                                if len(logs) >= tail:
-                                    break
-                            except:
-                                continue
+                    buffer = b''
 
-                    return {'logs': logs[-tail:]}  # Return last N logs
+                    async for chunk in resp.content.iter_chunked(4096):
+                        buffer += chunk
+                        text = buffer.decode('utf-8', errors='ignore')
+
+                        # Split into lines and process complete lines
+                        lines = text.split('\n')
+                        # Keep the last incomplete line in buffer
+                        buffer = lines[-1].encode('utf-8')
+
+                        for line in lines[:-1]:
+                            if line.startswith('data: '):
+                                try:
+                                    log_entry = json.loads(line[6:])
+                                    # Only keep essential fields
+                                    logs.append({
+                                        'message': log_entry.get('m', log_entry.get('message', '')),
+                                        'timestamp': log_entry.get('ts', log_entry.get('timestamp', ''))
+                                    })
+
+                                    if len(logs) >= tail:
+                                        # Got enough logs, stop reading
+                                        return {'log_count': len(logs), 'logs': logs[-tail:]}
+                                except json.JSONDecodeError:
+                                    continue
+
+                        # Stop if we've read too much (safety limit)
+                        if len(logs) > tail:
+                            break
+
+                    return {'log_count': len(logs), 'logs': logs[-tail:] if logs else []}
                 else:
                     return {'error': f'HTTP {resp.status}'}
     except asyncio.TimeoutError:
-        return {'error': 'Request timed out'}
+        # Timeout is expected for streaming endpoint, return what we have
+        return {'error': 'Timeout - this is normal for log streaming'}
     except Exception as e:
-        return {'error': str(e)}
+        return {'error': f'Exception: {str(e)}'}
 
 def get_server_context(server_name: str) -> str:
     """Get context about a server from config"""
