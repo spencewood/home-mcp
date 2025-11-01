@@ -471,22 +471,37 @@ async def call_tool(name: str, arguments: dict):
     
     elif name == "get_server_health":
         server_name = arguments["server_name"]
-        
+
         # Get system info
         info = await query_netdata(server_name, "info")
-        
+
         # Get CPU data (last 10 minutes)
         cpu_data = await query_netdata(server_name, "data?chart=system.cpu&after=-600")
         cpu_parsed = parse_netdata_metric(cpu_data)
-        
+
         # Get RAM data
         ram_data = await query_netdata(server_name, "data?chart=system.ram&after=-600")
         ram_parsed = parse_netdata_metric(ram_data)
-        
-        # Get disk usage
-        disk_data = await query_netdata(server_name, "data?chart=disk_space._&after=-600")
-        disk_parsed = parse_netdata_metric(disk_data)
-        
+
+        # Get disk usage - dynamically find disk_space charts
+        charts = await query_netdata(server_name, "charts")
+        disk_parsed = {}
+
+        if 'error' not in charts and 'charts' in charts:
+            # Find all disk_space.* charts
+            disk_charts = {
+                chart_id: chart_info
+                for chart_id, chart_info in charts['charts'].items()
+                if chart_id.startswith('disk_space.')
+            }
+
+            # Query each disk chart
+            for chart_id in disk_charts.keys():
+                data = await query_netdata(server_name, f"data?chart={chart_id}&after=-600")
+                disk_parsed[chart_id] = parse_netdata_metric(data)
+        else:
+            disk_parsed = {'error': charts.get('error', 'Unable to retrieve disk charts')}
+
         result = {
             'server_name': server_name,
             'context': get_server_context(server_name),
@@ -495,7 +510,7 @@ async def call_tool(name: str, arguments: dict):
             'ram': ram_parsed,
             'disk': disk_parsed
         }
-        
+
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
     
     elif name == "get_network_stats":
