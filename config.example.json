@@ -30,9 +30,14 @@
     "model": "YOUR_MODEL_HERE",
     "description": "Primary router for network infrastructure",
     "host": "192.168.x.x",
-    "port": 8729,
+    "port": 8728,
     "username": "mcp-read",
     "password": "YOUR_PASSWORD_HERE"
+  },
+  "dozzle": {
+    "enabled": true,
+    "url": "http://server2.local:8080",
+    "description": "Dozzle master instance for centralized container log monitoring across all hosts"
   },
   "context": {
     "location": "Home Lab",

@@ -16,6 +16,12 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for ho
 - **DHCP leases**: View all active DHCP assignments
 - **Traffic statistics**: Interface-level traffic monitoring
 
+### Dozzle Log Monitoring
+- **Multi-host container logs**: Query containers across all monitored hosts
+- **Centralized log access**: Single API endpoint for distributed container logs
+- **Real-time log streaming**: Fetch recent logs from any container
+- **Container discovery**: List all containers with health and status info
+
 ### Custom Netdata Plugins
 Includes monitoring plugins for specialized services:
 - **reth_monitor**: Ethereum execution client monitoring
@@ -30,6 +36,7 @@ Includes monitoring plugins for specialized services:
 - Docker and Docker Compose (for containerized deployment)
 - Netdata running on monitored servers
 - MikroTik router with API access (optional)
+- Dozzle instance for container log monitoring (optional)
 
 ## Installation
 
@@ -64,9 +71,14 @@ Edit `config.json` with your server details:
     "enabled": true,
     "model": "RouterBoard Model",
     "host": "192.168.x.x",
-    "port": 8729,
+    "port": 8728,
     "username": "mcp-read",
     "password": "YOUR_PASSWORD_HERE"
+  },
+  "dozzle": {
+    "enabled": true,
+    "url": "http://your-server.local:8080",
+    "description": "Dozzle master instance for container log monitoring"
   }
 }
 ```
@@ -111,6 +123,12 @@ python server.py
 - **`get_mikrotik_resources`**: System resources (CPU, memory, uptime, temp)
 - **`get_mikrotik_dhcp_leases`**: All DHCP lease information
 - **`get_mikrotik_traffic`**: Interface traffic statistics and bonding info
+
+### Container Log Monitoring (Dozzle)
+
+- **`get_dozzle_hosts`**: List all hosts monitored by Dozzle with container counts
+- **`get_dozzle_containers`**: List all containers across hosts with status and health
+- **`get_dozzle_container_logs`**: Fetch recent logs from any container by name or ID
 
 ## MCP Client Configuration
 
@@ -172,6 +190,13 @@ If the MCP server can't reach Netdata instances:
 - Verify credentials and network connectivity
 - Check port (default 8728 for plain, 8729 for SSL)
 
+### Dozzle Connection Issues
+
+- Verify Dozzle is accessible: `http://your-server:8080`
+- For agent mode, ensure agents are running on remote hosts (default port 7007)
+- Test SSE endpoint: `curl http://your-server:8080/api/events/stream`
+- Check that container logs are being captured by Docker
+
 ### Docker Issues
 
 View logs:
@@ -198,11 +223,18 @@ docker-compose restart
 |   Home MCP        |
 |    Server         |
 +----+--------+-----+
-     |        |
-     |        |
-     v        v
-+----+----+  +----------+
-| Netdata |  | MikroTik |
-| Servers |  |  Router  |
-+---------+  +----------+
+     |        |     |
+     |        |     |
+     v        v     v
++----+----+  +--+---+---+  +--------+
+| Netdata |  | MikroTik |  | Dozzle |
+| Servers |  |  Router  |  | Master |
++---------+  +----------+  +----+---+
+                                |
+                         +------+------+
+                         |             |
+                     +---v---+     +---v---+
+                     | Agent |     | Agent |
+                     | Host1 |     | Host2 |
+                     +-------+     +-------+
 ```

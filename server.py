@@ -82,6 +82,76 @@ async def query_mikrotik(path: str):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _query)
 
+async def query_dozzle_sse():
+    """Query Dozzle SSE events stream to get current container state"""
+    if not CONFIG.get('dozzle', {}).get('enabled'):
+        return {'error': 'Dozzle not enabled in config'}
+
+    dozzle_url = CONFIG['dozzle']['url']
+    url = f"{dozzle_url}/api/events/stream"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    # Read first SSE message which contains containers-changed event
+                    content = await resp.content.read(100000)  # Read up to 100KB
+                    text = content.decode('utf-8')
+
+                    # Parse SSE format: "event: containers-changed\ndata: {...}\n\n"
+                    if 'data: ' in text:
+                        data_start = text.find('data: ') + 6
+                        data_end = text.find('\n', data_start)
+                        if data_end == -1:
+                            data_end = len(text)
+                        json_str = text[data_start:data_end]
+                        return json.loads(json_str)
+                    else:
+                        return {'error': 'No data in SSE stream'}
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
+    """Query logs for a specific container from Dozzle"""
+    if not CONFIG.get('dozzle', {}).get('enabled'):
+        return {'error': 'Dozzle not enabled in config'}
+
+    dozzle_url = CONFIG['dozzle']['url']
+    # Use the actual Dozzle API format: /api/hosts/{host}/containers/{id}/logs
+    url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs/stream"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    # Read SSE stream for a short time to get recent logs
+                    content = await resp.content.read(50000)  # Read up to 50KB
+                    text = content.decode('utf-8')
+
+                    # Parse SSE log messages
+                    logs = []
+                    for line in text.split('\n'):
+                        if line.startswith('data: '):
+                            try:
+                                log_entry = json.loads(line[6:])
+                                logs.append(log_entry)
+                                if len(logs) >= tail:
+                                    break
+                            except:
+                                continue
+
+                    return {'logs': logs[-tail:]}  # Return last N logs
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
 def get_server_context(server_name: str) -> str:
     """Get context about a server from config"""
     if server_name not in CONFIG['servers']:
@@ -216,7 +286,41 @@ async def list_tools():
                 inputSchema={"type": "object", "properties": {}}
             ),
         ])
-    
+
+    # Add Dozzle tools if enabled
+    if CONFIG.get('dozzle', {}).get('enabled'):
+        tools.extend([
+            Tool(
+                name="get_dozzle_hosts",
+                description="Get all hosts monitored by Dozzle master instance (burger, cheese, tomato, fries)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_dozzle_containers",
+                description="Get all containers visible to Dozzle across all monitored hosts, with their status and basic info",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_dozzle_container_logs",
+                description="Get recent logs from a specific container monitored by Dozzle",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "container_id": {
+                            "type": "string",
+                            "description": "Container ID or name"
+                        },
+                        "tail": {
+                            "type": "integer",
+                            "description": "Number of recent log lines to retrieve (default: 100)",
+                            "default": 100
+                        }
+                    },
+                    "required": ["container_id"]
+                }
+            ),
+        ])
+
     return tools
 
 @server.call_tool()
@@ -413,9 +517,109 @@ async def call_tool(name: str, arguments: dict):
             'interfaces': interfaces,
             'bonding': bonding
         }
-        
+
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
-    
+
+    # === Dozzle Tools ===
+
+    elif name == "get_dozzle_hosts":
+        # Get containers from SSE stream
+        containers_data = await query_dozzle_sse()
+
+        if 'error' in containers_data:
+            return [TextContent(type="text", text=json.dumps(containers_data, indent=2))]
+
+        # Extract unique hosts from container data
+        hosts = {}
+        if isinstance(containers_data, list):
+            for container in containers_data:
+                host_id = container.get('host')
+                if host_id and host_id not in hosts:
+                    hosts[host_id] = {
+                        'id': host_id,
+                        'container_count': 0
+                    }
+                if host_id:
+                    hosts[host_id]['container_count'] += 1
+
+        result = {
+            'description': CONFIG['dozzle']['description'],
+            'host_count': len(hosts),
+            'hosts': list(hosts.values())
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_dozzle_containers":
+        # Get containers from SSE stream
+        containers_data = await query_dozzle_sse()
+
+        if 'error' in containers_data:
+            return [TextContent(type="text", text=json.dumps(containers_data, indent=2))]
+
+        # Simplify container data for easier reading
+        simplified_containers = []
+        if isinstance(containers_data, list):
+            for container in containers_data:
+                simplified_containers.append({
+                    'id': container.get('id'),
+                    'name': container.get('name'),
+                    'image': container.get('image'),
+                    'state': container.get('state'),
+                    'health': container.get('health', 'N/A'),
+                    'host': container.get('host'),
+                    'created': container.get('created'),
+                    'startedAt': container.get('startedAt')
+                })
+
+        result = {
+            'description': CONFIG['dozzle']['description'],
+            'container_count': len(simplified_containers),
+            'containers': simplified_containers
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_dozzle_container_logs":
+        container_id = arguments["container_id"]
+        tail = arguments.get("tail", 100)
+
+        # First get container list to find host ID
+        containers_data = await query_dozzle_sse()
+
+        if 'error' in containers_data:
+            return [TextContent(type="text", text=json.dumps(containers_data, indent=2))]
+
+        # Find the container and its host
+        host_id = None
+        container_name = None
+        if isinstance(containers_data, list):
+            for container in containers_data:
+                if container.get('id') == container_id or container.get('name') == container_id:
+                    host_id = container.get('host')
+                    container_name = container.get('name')
+                    container_id = container.get('id')
+                    break
+
+        if not host_id:
+            return [TextContent(type="text", text=json.dumps({
+                'error': f'Container {container_id} not found',
+                'hint': 'Use get_dozzle_containers to list available containers'
+            }, indent=2))]
+
+        # Query logs for specific container
+        logs_data = await query_dozzle_logs(host_id, container_id, tail)
+
+        result = {
+            'container_id': container_id,
+            'container_name': container_name,
+            'host_id': host_id,
+            'tail_lines': tail,
+            'logs': logs_data
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     else:
         return [TextContent(type="text", text=json.dumps({'error': f'Unknown tool: {name}'}, indent=2))]
 
