@@ -146,11 +146,15 @@ async def query_dozzle_sse():
     except Exception as e:
         return {'error': f'Exception: {str(e)}'}
 
-async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
+async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100,
+                           from_time: str = None, to_time: str = None,
+                           filter_pattern: str = None, levels: list = None):
     """Query historical logs for a specific container from Dozzle
 
-    Uses the non-streaming /logs endpoint with everything=true to get recent historical logs.
-    This is much better than streaming as it returns actual historical log data immediately.
+    Supports advanced filtering:
+    - Time range: from_time and to_time in RFC3339 format
+    - Pattern matching: filter_pattern (regex)
+    - Log levels: levels array for severity filtering
     """
     if not CONFIG.get('dozzle', {}).get('enabled'):
         return {'error': 'Dozzle not enabled in config'}
@@ -159,9 +163,32 @@ async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
     tail = min(tail, 500)  # Max 500 lines
 
     dozzle_url = CONFIG['dozzle']['url']
-    # Use the non-streaming endpoint with everything=true to get all available logs
-    # stdout and stderr are REQUIRED or you get HTTP 400: "stdout or stderr is required"
-    url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs?stdout=true&stderr=true&everything=true"
+
+    # Build query parameters
+    params = ['stdout=true', 'stderr=true']
+
+    # Time range or everything
+    if from_time and to_time:
+        # Use specific time range (RFC3339 format)
+        params.append(f'from={from_time}')
+        params.append(f'to={to_time}')
+    else:
+        # Get all available logs
+        params.append('everything=true')
+
+    # Add filter if provided
+    if filter_pattern:
+        # URL encode the filter pattern
+        import urllib.parse
+        encoded_filter = urllib.parse.quote(filter_pattern)
+        params.append(f'filter={encoded_filter}')
+
+    # Add log levels if provided
+    if levels:
+        for level in levels:
+            params.append(f'levels={level}')
+
+    url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs?{'&'.join(params)}"
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -188,20 +215,35 @@ async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
                         except json.JSONDecodeError:
                             continue
 
+                    # Build response with query info
+                    response = {
+                        'log_count': len(logs),
+                        'total_available': len(logs),
+                        'query': {}
+                    }
+
+                    # Add query details
+                    if from_time and to_time:
+                        response['query']['time_range'] = f'{from_time} to {to_time}'
+                    else:
+                        response['query']['scope'] = 'all available logs'
+
+                    if filter_pattern:
+                        response['query']['filter'] = filter_pattern
+
+                    if levels:
+                        response['query']['levels'] = levels
+
                     # Return the most recent 'tail' lines
                     if len(logs) == 0:
-                        return {
-                            'log_count': 0,
-                            'logs': [],
-                            'note': 'No logs found for this container'
-                        }
+                        response['logs'] = []
+                        response['note'] = 'No logs found matching the query criteria'
+                        return response
 
-                    return {
-                        'log_count': len(logs),
-                        'logs': logs[-tail:],  # Return last N logs
-                        'total_available': len(logs),
-                        'note': f'Showing last {min(tail, len(logs))} of {len(logs)} available log lines'
-                    }
+                    response['logs'] = logs[-tail:]  # Return last N logs
+                    response['note'] = f'Showing last {min(tail, len(logs))} of {len(logs)} log lines'
+
+                    return response
                 else:
                     return {'error': f'HTTP {resp.status}'}
     except asyncio.TimeoutError:
@@ -359,7 +401,7 @@ async def list_tools():
             ),
             Tool(
                 name="get_dozzle_container_logs",
-                description="Get historical logs from a container via Dozzle. Returns all available logs from the container's history, not just live/new logs. Works for both active and idle containers.",
+                description="Get historical logs from a container with advanced filtering. Supports time ranges, regex patterns, and log level filtering. Works for both active and idle containers.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -371,6 +413,23 @@ async def list_tools():
                             "type": "integer",
                             "description": "Number of most recent log lines to return (default: 100, max: 500)",
                             "default": 100
+                        },
+                        "from_time": {
+                            "type": "string",
+                            "description": "Start time in RFC3339 format (e.g., '2025-10-28T00:00:00Z'). If provided, to_time is also required."
+                        },
+                        "to_time": {
+                            "type": "string",
+                            "description": "End time in RFC3339 format (e.g., '2025-10-29T23:59:59Z'). If provided, from_time is also required."
+                        },
+                        "filter": {
+                            "type": "string",
+                            "description": "Regex pattern to filter log messages (e.g., 'error|failed|exception' for errors)"
+                        },
+                        "levels": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of log levels to filter by (e.g., ['ERROR', 'WARN'])"
                         }
                     },
                     "required": ["container_id"]
@@ -640,6 +699,10 @@ async def call_tool(name: str, arguments: dict):
     elif name == "get_dozzle_container_logs":
         container_id = arguments["container_id"]
         tail = arguments.get("tail", 100)
+        from_time = arguments.get("from_time")
+        to_time = arguments.get("to_time")
+        filter_pattern = arguments.get("filter")
+        levels = arguments.get("levels")
 
         # First get container list to find host ID
         containers_data = await query_dozzle_sse()
@@ -664,14 +727,20 @@ async def call_tool(name: str, arguments: dict):
                 'hint': 'Use get_dozzle_containers to list available containers'
             }, indent=2))]
 
-        # Query logs for specific container
-        logs_data = await query_dozzle_logs(host_id, container_id, tail)
+        # Query logs for specific container with advanced filtering
+        logs_data = await query_dozzle_logs(
+            host_id, container_id, tail,
+            from_time=from_time,
+            to_time=to_time,
+            filter_pattern=filter_pattern,
+            levels=levels
+        )
 
         result = {
             'container_id': container_id,
             'container_name': container_name,
             'host_id': host_id,
-            'tail_lines': tail,
+            'requested_tail': tail,
             'logs': logs_data
         }
 

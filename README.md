@@ -20,6 +20,7 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for ho
 - **Multi-host container logs**: Query containers across all monitored hosts
 - **Centralized log access**: Single API endpoint for distributed container logs
 - **Historical log retrieval**: Fetch complete log history from any container
+- **Advanced filtering**: Time range queries, regex pattern matching, log level filtering
 - **Container discovery**: List all containers with health and status info
 
 ### Custom Netdata Plugins
@@ -128,7 +129,11 @@ python server.py
 
 - **`get_dozzle_hosts`**: List all hosts monitored by Dozzle with container counts
 - **`get_dozzle_containers`**: List all containers across hosts with status and health
-- **`get_dozzle_container_logs`**: Fetch historical logs from any container by name or ID (returns complete log history, configurable tail)
+- **`get_dozzle_container_logs`**: Fetch historical logs with advanced filtering:
+  - Time range queries (from/to timestamps in RFC3339 format)
+  - Regex pattern matching (filter specific log content)
+  - Log level filtering (ERROR, WARN, INFO, etc.)
+  - Configurable tail (number of most recent lines to return)
 
 ## MCP Client Configuration
 
