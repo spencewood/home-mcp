@@ -147,7 +147,11 @@ async def query_dozzle_sse():
         return {'error': f'Exception: {str(e)}'}
 
 async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
-    """Query logs for a specific container from Dozzle"""
+    """Query historical logs for a specific container from Dozzle
+
+    Uses the non-streaming /logs endpoint with everything=true to get recent historical logs.
+    This is much better than streaming as it returns actual historical log data immediately.
+    """
     if not CONFIG.get('dozzle', {}).get('enabled'):
         return {'error': 'Dozzle not enabled in config'}
 
@@ -155,52 +159,53 @@ async def query_dozzle_logs(host_id: str, container_id: str, tail: int = 100):
     tail = min(tail, 500)  # Max 500 lines
 
     dozzle_url = CONFIG['dozzle']['url']
-    # Use the actual Dozzle API format: /api/hosts/{host}/containers/{id}/logs/stream
-    url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs/stream"
+    # Use the non-streaming endpoint with everything=true to get all available logs
+    # stdout and stderr are REQUIRED or you get HTTP 400: "stdout or stderr is required"
+    url = f"{dozzle_url}/api/hosts/{host_id}/containers/{container_id}/logs?stdout=true&stderr=true&everything=true"
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                 if resp.status == 200:
-                    # Parse SSE log messages as they stream in
+                    # Response is JSON Lines format (one JSON object per line)
+                    content = await resp.read()
+                    text = content.decode('utf-8', errors='ignore')
+
+                    # Parse JSON Lines format
                     logs = []
-                    buffer = b''
+                    for line in text.strip().split('\n'):
+                        if not line:
+                            continue
+                        try:
+                            log_entry = json.loads(line)
+                            # Extract essential fields
+                            # m = message, ts = timestamp (unix milliseconds), s = stream (stdout/stderr)
+                            logs.append({
+                                'message': log_entry.get('m', ''),
+                                'timestamp': log_entry.get('ts', ''),
+                                'stream': log_entry.get('s', 'unknown')
+                            })
+                        except json.JSONDecodeError:
+                            continue
 
-                    async for chunk in resp.content.iter_chunked(4096):
-                        buffer += chunk
-                        text = buffer.decode('utf-8', errors='ignore')
+                    # Return the most recent 'tail' lines
+                    if len(logs) == 0:
+                        return {
+                            'log_count': 0,
+                            'logs': [],
+                            'note': 'No logs found for this container'
+                        }
 
-                        # Split into lines and process complete lines
-                        lines = text.split('\n')
-                        # Keep the last incomplete line in buffer
-                        buffer = lines[-1].encode('utf-8')
-
-                        for line in lines[:-1]:
-                            if line.startswith('data: '):
-                                try:
-                                    log_entry = json.loads(line[6:])
-                                    # Only keep essential fields
-                                    logs.append({
-                                        'message': log_entry.get('m', log_entry.get('message', '')),
-                                        'timestamp': log_entry.get('ts', log_entry.get('timestamp', ''))
-                                    })
-
-                                    if len(logs) >= tail:
-                                        # Got enough logs, stop reading
-                                        return {'log_count': len(logs), 'logs': logs[-tail:]}
-                                except json.JSONDecodeError:
-                                    continue
-
-                        # Stop if we've read too much (safety limit)
-                        if len(logs) > tail:
-                            break
-
-                    return {'log_count': len(logs), 'logs': logs[-tail:] if logs else []}
+                    return {
+                        'log_count': len(logs),
+                        'logs': logs[-tail:],  # Return last N logs
+                        'total_available': len(logs),
+                        'note': f'Showing last {min(tail, len(logs))} of {len(logs)} available log lines'
+                    }
                 else:
                     return {'error': f'HTTP {resp.status}'}
     except asyncio.TimeoutError:
-        # Timeout is expected for streaming endpoint, return what we have
-        return {'error': 'Timeout - this is normal for log streaming'}
+        return {'error': 'Request timed out'}
     except Exception as e:
         return {'error': f'Exception: {str(e)}'}
 
@@ -354,7 +359,7 @@ async def list_tools():
             ),
             Tool(
                 name="get_dozzle_container_logs",
-                description="Get recent logs from a specific container monitored by Dozzle",
+                description="Get historical logs from a container via Dozzle. Returns all available logs from the container's history, not just live/new logs. Works for both active and idle containers.",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -364,7 +369,7 @@ async def list_tools():
                         },
                         "tail": {
                             "type": "integer",
-                            "description": "Number of recent log lines to retrieve (default: 100)",
+                            "description": "Number of most recent log lines to return (default: 100, max: 500)",
                             "default": 100
                         }
                     },
