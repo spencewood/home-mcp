@@ -85,7 +85,7 @@ check_ssd_wear() {
 
         # Check for NVMe drives (Percentage Used)
         local nvme_wear
-        nvme_wear=$(smartctl -A "$drive" 2>/dev/null | grep -i "Percentage Used" | awk '{print $3}' | tr -d '%')
+        nvme_wear=$(smartctl -A "$drive" 2>/dev/null | grep -i "Percentage Used" | awk '{print $3}' | tr -d '%' || true)
         if [ -n "$nvme_wear" ] && [ "$nvme_wear" -ge "$SSD_WEAR_THRESHOLD" ] 2>/dev/null; then
             add_issue "WARNING" "SSD wear at ${nvme_wear}% on $drive"
             continue
@@ -94,7 +94,7 @@ check_ssd_wear() {
         # Check for SATA SSDs (Wear_Leveling_Count or Media_Wearout_Indicator)
         # These typically count DOWN from 100
         local wear_value
-        wear_value=$(echo "$smart_output" | grep -E "(Wear_Leveling_Count|Media_Wearout_Indicator)" | awk '{print $4}')
+        wear_value=$(echo "$smart_output" | grep -E "(Wear_Leveling_Count|Media_Wearout_Indicator)" | awk '{print $4}' || true)
         if [ -n "$wear_value" ] && [ "$wear_value" -le $((100 - SSD_WEAR_THRESHOLD)) ] 2>/dev/null; then
             local wear_percent=$((100 - wear_value))
             add_issue "WARNING" "SSD wear at ${wear_percent}% on $drive"
@@ -108,13 +108,14 @@ check_ssd_wear() {
 
 check_disk_space() {
     while IFS= read -r line; do
+        [ -z "$line" ] && continue
         usage=$(echo "$line" | awk '{print $5}' | sed 's/%//')
         mount=$(echo "$line" | awk '{print $6}')
 
         if [ "$usage" -ge "$DISK_SPACE_THRESHOLD" ]; then
             add_issue "WARNING" "Disk space at ${usage}% on ${mount}"
         fi
-    done < <(df -h | grep -E '^/dev/')
+    done < <(df -h | grep -E '^/dev/' || true)
 }
 
 # =============================================================================
@@ -199,7 +200,7 @@ check_cpu_temp() {
     # Try sensors command first
     if command -v sensors &> /dev/null; then
         # Get highest CPU temperature reading
-        temp=$(sensors 2>/dev/null | grep -E "(Core|Tctl|CPU)" | grep -oP '\+\K[0-9]+(?=\.[0-9]*°C)' | sort -rn | head -1)
+        temp=$(sensors 2>/dev/null | grep -E "(Core|Tctl|CPU)" | grep -oP '\+\K[0-9]+(?=\.[0-9]*°C)' | sort -rn | head -1 || true)
     fi
 
     # Fallback: Try reading from thermal zones (Linux)
