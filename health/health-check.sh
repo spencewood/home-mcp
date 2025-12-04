@@ -230,9 +230,15 @@ check_cpu_temp() {
 # =============================================================================
 
 check_dmesg() {
-    if dmesg -T -l err,crit,alert,emerg 2>/dev/null | tail -20 | grep -q .; then
+    # Filter out common firmware/ACPI noise that isn't actionable
+    local errors
+    errors=$(dmesg -T -l err,crit,alert,emerg 2>/dev/null | \
+        grep -vE "(ACPI|BIOS|ucsi_acpi|firmware|INT3515)" | \
+        tail -20 || true)
+
+    if [ -n "$errors" ]; then
         local error_count
-        error_count=$(dmesg -T -l err,crit,alert,emerg 2>/dev/null | tail -20 | wc -l)
+        error_count=$(echo "$errors" | wc -l)
         add_issue "WARNING" "Found ${error_count} recent error(s) in dmesg (check journalctl)"
     fi
 }
