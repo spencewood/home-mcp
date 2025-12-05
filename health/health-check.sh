@@ -239,7 +239,11 @@ check_dmesg() {
     if [ -n "$errors" ]; then
         local error_count
         error_count=$(echo "$errors" | wc -l)
-        add_issue "WARNING" "Found ${error_count} recent error(s) in dmesg (check journalctl)"
+        add_issue "WARNING" "Found ${error_count} dmesg error(s):"
+        # Show each error on its own line
+        while IFS= read -r line; do
+            OUTPUT="${OUTPUT}    ${line}\n"
+        done <<< "$errors"
     fi
 }
 
