@@ -124,7 +124,8 @@ check_disk_space() {
 
 check_memory() {
     local mem_info total used percent
-    mem_info=$(free | grep Mem)
+    mem_info=$(free 2>/dev/null | grep Mem || true)
+    [ -z "$mem_info" ] && return
     total=$(echo "$mem_info" | awk '{print $2}')
     used=$(echo "$mem_info" | awk '{print $3}')
     percent=$((used * 100 / total))
@@ -140,7 +141,8 @@ check_memory() {
 
 check_swap() {
     local swap_info total used percent
-    swap_info=$(free | grep Swap)
+    swap_info=$(free 2>/dev/null | grep Swap || true)
+    [ -z "$swap_info" ] && return
     total=$(echo "$swap_info" | awk '{print $2}')
     used=$(echo "$swap_info" | awk '{print $3}')
 
@@ -162,7 +164,8 @@ check_swap() {
 
 check_load() {
     local load_5min
-    load_5min=$(uptime | awk -F'load average:' '{print $2}' | awk -F',' '{print $2}' | xargs)
+    load_5min=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | awk -F',' '{print $2}' | xargs || true)
+    [ -z "$load_5min" ] && return
 
     if awk "BEGIN {exit !($load_5min > $LOAD_THRESHOLD)}"; then
         add_issue "WARNING" "High load average: $load_5min (5-min)"
@@ -180,7 +183,7 @@ check_iowait() {
 
     # Get current I/O wait percentage (second sample for accuracy)
     local iowait
-    iowait=$(iostat -c 1 2 2>/dev/null | tail -1 | awk '{print $4}')
+    iowait=$(iostat -c 1 2 2>/dev/null | tail -1 | awk '{print $4}' || true)
 
     if [ -n "$iowait" ]; then
         # Compare floats using awk
@@ -208,7 +211,7 @@ check_cpu_temp() {
         for zone in /sys/class/thermal/thermal_zone*/temp; do
             if [ -f "$zone" ]; then
                 local zone_temp
-                zone_temp=$(cat "$zone" 2>/dev/null)
+                zone_temp=$(cat "$zone" 2>/dev/null || true)
                 if [ -n "$zone_temp" ]; then
                     # Convert from millidegrees
                     zone_temp=$((zone_temp / 1000))
@@ -298,11 +301,12 @@ check_failed_services() {
     fi
 
     local failed_services
-    failed_services=$(systemctl list-units --state=failed --no-pager --no-legend 2>/dev/null | wc -l)
+    failed_services=$(systemctl list-units --state=failed --no-pager --no-legend 2>/dev/null | wc -l || true)
+    [ -z "$failed_services" ] && return
 
     if [ "$failed_services" -gt 0 ]; then
         local services
-        services=$(systemctl list-units --state=failed --no-pager --no-legend | awk '{print $1}' | head -3 | tr '\n' ', ' | sed 's/,$//')
+        services=$(systemctl list-units --state=failed --no-pager --no-legend 2>/dev/null | awk '{print $1}' | head -3 | tr '\n' ', ' | sed 's/,$//' || true)
         add_issue "WARNING" "${failed_services} failed systemd service(s): ${services}"
     fi
 }
