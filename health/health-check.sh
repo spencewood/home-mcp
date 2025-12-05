@@ -230,22 +230,27 @@ check_cpu_temp() {
 # =============================================================================
 
 check_dmesg() {
-    # Use journalctl for proper time-based filtering (last 24 hours)
     # WHITELIST approach: only alert on truly critical hardware issues
-    if ! command -v journalctl &> /dev/null; then
+    local errors=""
+
+    # Try journalctl first (systemd systems), fall back to dmesg
+    if command -v journalctl &> /dev/null; then
+        errors=$(journalctl -k -p err --since "24 hours ago" --no-pager -q 2>/dev/null | \
+            grep -iE "(ata[0-9]|sata|nvme|scsi|blk_update|I/O error|ext4|xfs|btrfs|filesystem|mce|ecc|hardware error|critical|failed.*drive|sector)" | \
+            tail -20 || true)
+    elif command -v dmesg &> /dev/null; then
+        # Fallback to dmesg (no time filtering, but better than nothing)
+        errors=$(dmesg 2>/dev/null | \
+            grep -iE "(ata[0-9]|sata|nvme|scsi|blk_update|I/O error|ext4|xfs|btrfs|filesystem|mce|ecc|hardware error|critical|failed.*drive|sector)" | \
+            tail -20 || true)
+    else
         return
     fi
-
-    local errors
-    # Only catch: disk I/O, filesystem, memory hardware, critical hardware errors
-    errors=$(journalctl -k -p err --since "24 hours ago" --no-pager -q 2>/dev/null | \
-        grep -iE "(ata[0-9]|sata|nvme|scsi|blk_update|I/O error|ext4|xfs|btrfs|filesystem|mce|ecc|hardware error|critical|failed.*drive|sector)" | \
-        tail -20 || true)
 
     if [ -n "$errors" ]; then
         local error_count
         error_count=$(echo "$errors" | wc -l)
-        add_issue "CRITICAL" "Found ${error_count} hardware/disk error(s) in last 24h:"
+        add_issue "CRITICAL" "Found ${error_count} hardware/disk error(s):"
         while IFS= read -r line; do
             OUTPUT="${OUTPUT}    ${line}\n"
         done <<< "$errors"
@@ -257,20 +262,25 @@ check_dmesg() {
 # =============================================================================
 
 check_oom() {
-    if ! command -v journalctl &> /dev/null; then
+    local oom_events=""
+
+    # Try journalctl first, fall back to dmesg
+    if command -v journalctl &> /dev/null; then
+        oom_events=$(journalctl -k --since "7 days ago" --no-pager -q 2>/dev/null | \
+            grep -i "Out of memory: Killed process" | tail -5 || true)
+    elif command -v dmesg &> /dev/null; then
+        oom_events=$(dmesg 2>/dev/null | \
+            grep -i "Out of memory: Killed process" | tail -5 || true)
+    else
         return
     fi
-
-    local oom_events
-    oom_events=$(journalctl -k --since "7 days ago" --no-pager -q 2>/dev/null | \
-        grep -i "Out of memory: Killed process" | tail -5 || true)
 
     if [ -n "$oom_events" ]; then
         local oom_count
         oom_count=$(echo "$oom_events" | wc -l)
-        add_issue "CRITICAL" "OOM killer invoked ${oom_count} time(s) in last 7 days:"
+        add_issue "CRITICAL" "OOM killer invoked ${oom_count} time(s):"
         while IFS= read -r line; do
-            # Extract just the process name and basic info
+            # Extract just the process name
             local summary
             summary=$(echo "$line" | sed 's/.*Out of memory: Killed process [0-9]* (\([^)]*\)).*/\1/' | head -c100)
             OUTPUT="${OUTPUT}    Killed: ${summary}\n"
