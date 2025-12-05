@@ -313,7 +313,7 @@ check_failed_services() {
 
 check_zombies() {
     local zombie_count
-    zombie_count=$(ps aux 2>/dev/null | awk '$8 ~ /^Z/ {count++} END {print count+0}')
+    zombie_count=$(ps aux 2>/dev/null | awk '$8 ~ /^Z/ {count++} END {print count+0}' || true)
 
     if [ "$zombie_count" -gt "$ZOMBIE_THRESHOLD" ]; then
         add_issue "WARNING" "${zombie_count} zombie processes detected"
