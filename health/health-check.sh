@@ -5,6 +5,11 @@
 # Outputs problems to stdout for alerting
 #
 
+# Dependencies (for full health-check.sh functionality):
+#   sudo apt install smartmontools sysstat lm-sensors jq
+#   sudo sensors-detect  # after installing lm-sensors
+#
+
 set -euo pipefail
 
 # =============================================================================
@@ -18,7 +23,7 @@ LOAD_THRESHOLD=8.0           # Alert if 5-min load average exceeds this
 IOWAIT_THRESHOLD=20          # Alert if I/O wait exceeds this percentage
 CPU_TEMP_THRESHOLD=80        # Alert if CPU temp exceeds this (Celsius)
 SSD_WEAR_THRESHOLD=90        # Alert if SSD wear level exceeds this percentage
-ZOMBIE_THRESHOLD=5           # Alert if zombie process count exceeds this
+ZOMBIE_THRESHOLD=50          # Alert if zombie process count exceeds this
 PING_TARGET="1.1.1.1"        # Target for network connectivity check
 PING_TIMEOUT=5               # Seconds to wait for ping response
 
