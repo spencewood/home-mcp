@@ -39,6 +39,27 @@
     "url": "http://server2.local:8080",
     "description": "Dozzle master instance for centralized container log monitoring across all hosts"
   },
+  "adguard": {
+    "enabled": true,
+    "url": "http://adguard.local:3000",
+    "username": "admin",
+    "password": "YOUR_PASSWORD_HERE",
+    "description": "AdGuard Home DNS filtering"
+  },
+  "tezos": {
+    "enabled": true,
+    "node_url": "http://tezos-node.local:8732",
+    "baker_address": "tz1YOUR_BAKER_ADDRESS",
+    "tzkt_url": "https://api.tzkt.io",
+    "description": "Tezos baker node"
+  },
+  "ethereum": {
+    "enabled": true,
+    "execution_url": "http://geth.local:8545",
+    "beacon_url": "http://beacon.local:5052",
+    "validator_indices": [123456, 123457],
+    "description": "Ethereum validator node"
+  },
   "context": {
     "location": "Home Lab",
     "monitoring_strategy": "Automated health checks with alert notifications on failures",

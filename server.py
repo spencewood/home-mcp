@@ -284,6 +284,119 @@ def parse_netdata_metric(data: dict, metric_name: str = "value") -> dict:
     except Exception as e:
         return {'error': f'Parse error: {str(e)}', 'raw_data': data}
 
+async def query_adguard(endpoint: str):
+    """Query AdGuard Home API"""
+    if not CONFIG.get('adguard', {}).get('enabled'):
+        return {'error': 'AdGuard not enabled in config'}
+
+    ag_config = CONFIG['adguard']
+    url = f"{ag_config['url']}/control/{endpoint}"
+
+    try:
+        auth = aiohttp.BasicAuth(ag_config['username'], ag_config['password'])
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, auth=auth, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def query_tezos_node(endpoint: str):
+    """Query Tezos node RPC"""
+    if not CONFIG.get('tezos', {}).get('enabled'):
+        return {'error': 'Tezos not enabled in config'}
+
+    tz_config = CONFIG['tezos']
+    url = f"{tz_config['node_url']}/{endpoint}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def query_tzkt(endpoint: str):
+    """Query TzKT API for baker/delegation info"""
+    if not CONFIG.get('tezos', {}).get('enabled'):
+        return {'error': 'Tezos not enabled in config'}
+
+    tz_config = CONFIG['tezos']
+    # Use public TzKT API or self-hosted
+    base_url = tz_config.get('tzkt_url', 'https://api.tzkt.io')
+    url = f"{base_url}/v1/{endpoint}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def query_eth_execution(method: str, params: list = None):
+    """Query Ethereum execution client JSON-RPC"""
+    if not CONFIG.get('ethereum', {}).get('enabled'):
+        return {'error': 'Ethereum not enabled in config'}
+
+    eth_config = CONFIG['ethereum']
+    url = eth_config['execution_url']
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params or [],
+        "id": 1
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    result = await resp.json()
+                    if 'error' in result:
+                        return {'error': result['error'].get('message', 'RPC error')}
+                    return result.get('result')
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def query_eth_beacon(endpoint: str):
+    """Query Ethereum beacon chain API"""
+    if not CONFIG.get('ethereum', {}).get('enabled'):
+        return {'error': 'Ethereum not enabled in config'}
+
+    eth_config = CONFIG['ethereum']
+    url = f"{eth_config['beacon_url']}/eth/v1/{endpoint}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                else:
+                    return {'error': f'HTTP {resp.status}'}
+    except asyncio.TimeoutError:
+        return {'error': 'Request timed out'}
+    except Exception as e:
+        return {'error': str(e)}
+
 # === MCP Tools ===
 
 @server.list_tools()
@@ -384,6 +497,26 @@ async def list_tools():
                 description="Get interface traffic statistics from MikroTik",
                 inputSchema={"type": "object", "properties": {}}
             ),
+            Tool(
+                name="get_mikrotik_connections",
+                description="Get active firewall connections (connection tracking table)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_mikrotik_firewall_rules",
+                description="Get firewall filter and NAT rules",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_mikrotik_arp",
+                description="Get ARP table - shows all devices seen on the network",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_mikrotik_wireguard",
+                description="Get WireGuard interfaces and peer status",
+                inputSchema={"type": "object", "properties": {}}
+            ),
         ])
 
     # Add Dozzle tools if enabled
@@ -434,6 +567,108 @@ async def list_tools():
                     },
                     "required": ["container_id"]
                 }
+            ),
+        ])
+
+    # Add AdGuard tools if enabled
+    if CONFIG.get('adguard', {}).get('enabled'):
+        tools.extend([
+            Tool(
+                name="get_adguard_status",
+                description="Get AdGuard Home status including protection state, filters, and version",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_adguard_stats",
+                description="Get AdGuard DNS query statistics (queries, blocked, top clients, top domains)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_adguard_query_log",
+                description="Get recent DNS query log entries",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of entries to return (default: 100, max: 500)",
+                            "default": 100
+                        },
+                        "search": {
+                            "type": "string",
+                            "description": "Filter by domain name"
+                        },
+                        "blocked_only": {
+                            "type": "boolean",
+                            "description": "Only show blocked queries",
+                            "default": False
+                        }
+                    }
+                }
+            ),
+        ])
+
+    # Add Tezos tools if enabled
+    if CONFIG.get('tezos', {}).get('enabled'):
+        tools.extend([
+            Tool(
+                name="get_tezos_node_status",
+                description="Get Tezos node sync status, head block, and network info",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_tezos_baker_info",
+                description="Get baker delegation info, balance, and staking status",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_tezos_baking_rights",
+                description="Get upcoming baking and endorsing rights for the baker",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "cycles": {
+                            "type": "integer",
+                            "description": "Number of cycles to look ahead (default: 1)",
+                            "default": 1
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_tezos_rewards",
+                description="Get recent baking rewards and payment history",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+        ])
+
+    # Add Ethereum tools if enabled
+    if CONFIG.get('ethereum', {}).get('enabled'):
+        tools.extend([
+            Tool(
+                name="get_eth_node_status",
+                description="Get Ethereum execution client sync status and peer info",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_eth_beacon_status",
+                description="Get beacon chain (consensus) node sync status and head slot",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_eth_validator_status",
+                description="Get validator status, balance, and attestation performance",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_eth_validator_duties",
+                description="Get upcoming validator duties (attestations, proposals)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_eth_rewards",
+                description="Get validator rewards summary",
+                inputSchema={"type": "object", "properties": {}}
             ),
         ])
 
@@ -651,6 +886,59 @@ async def call_tool(name: str, arguments: dict):
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
+    elif name == "get_mikrotik_connections":
+        # Get active connections from connection tracking
+        connections = await query_mikrotik('/ip/firewall/connection')
+
+        result = {
+            'router': CONFIG['mikrotik']['model'],
+            'connection_count': len(connections.get('data', [])) if 'data' in connections else 0,
+            'connections': connections
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_mikrotik_firewall_rules":
+        # Get filter rules
+        filter_rules = await query_mikrotik('/ip/firewall/filter')
+
+        # Get NAT rules
+        nat_rules = await query_mikrotik('/ip/firewall/nat')
+
+        result = {
+            'router': CONFIG['mikrotik']['model'],
+            'filter_rules': filter_rules,
+            'nat_rules': nat_rules
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_mikrotik_arp":
+        # Get ARP table
+        arp = await query_mikrotik('/ip/arp')
+
+        result = {
+            'router': CONFIG['mikrotik']['model'],
+            'arp_entries': arp
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_mikrotik_wireguard":
+        # Get WireGuard interfaces
+        wg_interfaces = await query_mikrotik('/interface/wireguard')
+
+        # Get WireGuard peers
+        wg_peers = await query_mikrotik('/interface/wireguard/peers')
+
+        result = {
+            'router': CONFIG['mikrotik']['model'],
+            'wireguard_interfaces': wg_interfaces,
+            'wireguard_peers': wg_peers
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     # === Dozzle Tools ===
 
     elif name == "get_dozzle_hosts":
@@ -757,6 +1045,255 @@ async def call_tool(name: str, arguments: dict):
             'host_id': host_id,
             'requested_tail': tail,
             'logs': logs_data
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    # === AdGuard Tools ===
+
+    elif name == "get_adguard_status":
+        status = await query_adguard('status')
+
+        result = {
+            'description': CONFIG.get('adguard', {}).get('description', 'AdGuard Home'),
+            'status': status
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_adguard_stats":
+        stats = await query_adguard('stats')
+
+        result = {
+            'description': CONFIG.get('adguard', {}).get('description', 'AdGuard Home'),
+            'stats': stats
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_adguard_query_log":
+        limit = min(arguments.get("limit", 100), 500)
+        search = arguments.get("search", "")
+        blocked_only = arguments.get("blocked_only", False)
+
+        # Build query params
+        params = f"limit={limit}"
+        if search:
+            params += f"&search={search}"
+        if blocked_only:
+            params += "&response_status=blocked"
+
+        query_log = await query_adguard(f'querylog?{params}')
+
+        result = {
+            'description': CONFIG.get('adguard', {}).get('description', 'AdGuard Home'),
+            'query_log': query_log
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    # === Tezos Tools ===
+
+    elif name == "get_tezos_node_status":
+        # Get node bootstrapped status
+        bootstrapped = await query_tezos_node('chains/main/is_bootstrapped')
+
+        # Get head block
+        head = await query_tezos_node('chains/main/blocks/head/header')
+
+        # Get network connections
+        connections = await query_tezos_node('network/connections')
+
+        result = {
+            'description': CONFIG.get('tezos', {}).get('description', 'Tezos Node'),
+            'bootstrapped': bootstrapped,
+            'head': head,
+            'peer_count': len(connections) if isinstance(connections, list) else 0
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_tezos_baker_info":
+        tz_config = CONFIG.get('tezos', {})
+        baker_address = tz_config.get('baker_address')
+
+        if not baker_address:
+            return [TextContent(type="text", text=json.dumps({'error': 'baker_address not configured'}, indent=2))]
+
+        # Get baker info from TzKT
+        baker_info = await query_tzkt(f'accounts/{baker_address}')
+
+        # Get delegators
+        delegators = await query_tzkt(f'accounts/{baker_address}/delegators')
+
+        result = {
+            'description': tz_config.get('description', 'Tezos Baker'),
+            'baker_address': baker_address,
+            'baker_info': baker_info,
+            'delegator_count': len(delegators) if isinstance(delegators, list) else 0,
+            'delegators': delegators[:20] if isinstance(delegators, list) else delegators  # Limit to 20
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_tezos_baking_rights":
+        tz_config = CONFIG.get('tezos', {})
+        baker_address = tz_config.get('baker_address')
+        cycles_ahead = arguments.get("cycles", 1)
+
+        if not baker_address:
+            return [TextContent(type="text", text=json.dumps({'error': 'baker_address not configured'}, indent=2))]
+
+        # Get current cycle
+        head = await query_tezos_node('chains/main/blocks/head/metadata')
+        current_cycle = head.get('level_info', {}).get('cycle') if isinstance(head, dict) else None
+
+        # Get baking rights (limit based on cycles requested - ~8192 blocks per cycle)
+        rights_limit = min(cycles_ahead * 50, 200)
+        baking_rights = await query_tzkt(f'rights/baking?baker={baker_address}&limit={rights_limit}')
+
+        # Get endorsing rights
+        endorsing_rights = await query_tzkt(f'rights/endorsing?baker={baker_address}&limit=50')
+
+        result = {
+            'description': tz_config.get('description', 'Tezos Baker'),
+            'baker_address': baker_address,
+            'current_cycle': current_cycle,
+            'baking_rights': baking_rights,
+            'endorsing_rights': endorsing_rights
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_tezos_rewards":
+        tz_config = CONFIG.get('tezos', {})
+        baker_address = tz_config.get('baker_address')
+
+        if not baker_address:
+            return [TextContent(type="text", text=json.dumps({'error': 'baker_address not configured'}, indent=2))]
+
+        # Get recent rewards from TzKT
+        rewards = await query_tzkt(f'rewards/bakers/{baker_address}?limit=10')
+
+        result = {
+            'description': tz_config.get('description', 'Tezos Baker'),
+            'baker_address': baker_address,
+            'recent_rewards': rewards
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    # === Ethereum Tools ===
+
+    elif name == "get_eth_node_status":
+        # Get sync status
+        sync_status = await query_eth_execution('eth_syncing')
+
+        # Get peer count
+        peer_count = await query_eth_execution('net_peerCount')
+
+        # Get latest block
+        latest_block = await query_eth_execution('eth_blockNumber')
+
+        # Get client version
+        client_version = await query_eth_execution('web3_clientVersion')
+
+        result = {
+            'description': CONFIG.get('ethereum', {}).get('description', 'Ethereum Node'),
+            'client_version': client_version,
+            'syncing': sync_status if sync_status else False,
+            'peer_count': int(peer_count, 16) if isinstance(peer_count, str) else peer_count,
+            'latest_block': int(latest_block, 16) if isinstance(latest_block, str) else latest_block
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_eth_beacon_status":
+        # Get node sync status
+        sync_status = await query_eth_beacon('node/syncing')
+
+        # Get node identity
+        identity = await query_eth_beacon('node/identity')
+
+        # Get node peers
+        peers = await query_eth_beacon('node/peers')
+
+        result = {
+            'description': CONFIG.get('ethereum', {}).get('description', 'Ethereum Beacon'),
+            'sync_status': sync_status,
+            'identity': identity,
+            'peer_count': len(peers.get('data', [])) if isinstance(peers, dict) else 0
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_eth_validator_status":
+        eth_config = CONFIG.get('ethereum', {})
+        validator_indices = eth_config.get('validator_indices', [])
+
+        if not validator_indices:
+            return [TextContent(type="text", text=json.dumps({'error': 'validator_indices not configured'}, indent=2))]
+
+        validators = []
+        for idx in validator_indices[:10]:  # Limit to 10 validators
+            validator = await query_eth_beacon(f'beacon/states/head/validators/{idx}')
+            if isinstance(validator, dict) and 'data' in validator:
+                validators.append(validator['data'])
+
+        result = {
+            'description': eth_config.get('description', 'Ethereum Validators'),
+            'validator_count': len(validator_indices),
+            'validators': validators
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_eth_validator_duties":
+        eth_config = CONFIG.get('ethereum', {})
+        validator_indices = eth_config.get('validator_indices', [])
+
+        if not validator_indices:
+            return [TextContent(type="text", text=json.dumps({'error': 'validator_indices not configured'}, indent=2))]
+
+        # Get current epoch
+        head = await query_eth_beacon('beacon/headers/head')
+        current_slot = int(head.get('data', {}).get('header', {}).get('message', {}).get('slot', 0)) if isinstance(head, dict) else 0
+        current_epoch = current_slot // 32
+
+        # Get proposer duties for current epoch
+        proposer_duties = await query_eth_beacon(f'validator/duties/proposer/{current_epoch}')
+
+        result = {
+            'description': eth_config.get('description', 'Ethereum Validators'),
+            'current_epoch': current_epoch,
+            'current_slot': current_slot,
+            'proposer_duties': proposer_duties
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_eth_rewards":
+        eth_config = CONFIG.get('ethereum', {})
+        validator_indices = eth_config.get('validator_indices', [])
+
+        if not validator_indices:
+            return [TextContent(type="text", text=json.dumps({'error': 'validator_indices not configured'}, indent=2))]
+
+        # Get validator balances
+        validators = []
+        for idx in validator_indices[:10]:
+            validator = await query_eth_beacon(f'beacon/states/head/validators/{idx}')
+            if isinstance(validator, dict) and 'data' in validator:
+                validators.append({
+                    'index': idx,
+                    'balance': validator['data'].get('balance'),
+                    'effective_balance': validator['data'].get('validator', {}).get('effective_balance'),
+                    'status': validator['data'].get('status')
+                })
+
+        result = {
+            'description': eth_config.get('description', 'Ethereum Validators'),
+            'validators': validators
         }
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
