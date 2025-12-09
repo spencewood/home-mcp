@@ -397,11 +397,11 @@ async def query_eth_beacon(endpoint: str):
     except Exception as e:
         return {'error': str(e)}
 
-async def query_restic(repo_name: str, command: str = 'snapshots'):
-    """Query restic REST server for repository info
+async def query_restic(command: str = 'snapshots', host: str = None):
+    """Query restic repository
 
     Uses restic CLI to query the REST server. Commands supported:
-    - snapshots: list all snapshots
+    - snapshots: list all snapshots (optionally filtered by host)
     - stats: repository statistics
     - check: verify repository integrity (slow)
     """
@@ -409,16 +409,16 @@ async def query_restic(repo_name: str, command: str = 'snapshots'):
         return {'error': 'Restic not enabled in config'}
 
     restic_config = CONFIG['restic']
-    rest_url = restic_config['rest_url']
+    repo_url = restic_config['repo_url']
     password = restic_config['password']
-
-    repo_url = f"rest:{rest_url}/{repo_name}/"
 
     # Build restic command
     cmd = ['restic', '-r', repo_url, '--json']
 
     if command == 'snapshots':
         cmd.append('snapshots')
+        if host:
+            cmd.extend(['--host', host])
     elif command == 'stats':
         cmd.extend(['stats', '--mode', 'raw-data'])
     elif command == 'check':
@@ -455,44 +455,43 @@ async def query_restic(repo_name: str, command: str = 'snapshots'):
     except Exception as e:
         return {'error': str(e)}
 
-async def list_restic_repos():
-    """List all configured restic repositories and check their status"""
+async def get_restic_overview():
+    """Get overview of all backups, grouped by hostname"""
     if not CONFIG.get('restic', {}).get('enabled'):
         return {'error': 'Restic not enabled in config'}
 
-    restic_config = CONFIG['restic']
-    repos = restic_config.get('repos', {})
+    snapshots = await query_restic('snapshots')
 
+    if 'error' in snapshots:
+        return snapshots
+
+    snapshot_list = snapshots if isinstance(snapshots, list) else []
+
+    # Group snapshots by hostname
+    hosts = {}
+    for snap in snapshot_list:
+        hostname = snap.get('hostname', 'unknown')
+        if hostname not in hosts:
+            hosts[hostname] = []
+        hosts[hostname].append(snap)
+
+    # Build summary per host
     results = {}
-    for repo_name, description in repos.items():
-        # Quick check - just get snapshots
-        snapshots = await query_restic(repo_name, 'snapshots')
+    for hostname, snaps in hosts.items():
+        sorted_snaps = sorted(snaps, key=lambda x: x.get('time', ''), reverse=True)
+        latest = sorted_snaps[0] if sorted_snaps else None
+        results[hostname] = {
+            'snapshot_count': len(snaps),
+            'latest_backup': latest.get('time') if latest else None,
+            'latest_tags': latest.get('tags', []) if latest else [],
+            'paths': latest.get('paths', []) if latest else []
+        }
 
-        if 'error' in snapshots:
-            results[repo_name] = {
-                'description': description,
-                'status': 'error',
-                'error': snapshots['error'],
-                'exists': snapshots.get('exists', True)
-            }
-        else:
-            snapshot_list = snapshots if isinstance(snapshots, list) else []
-            latest = None
-            if snapshot_list:
-                # Sort by time and get most recent
-                sorted_snaps = sorted(snapshot_list, key=lambda x: x.get('time', ''), reverse=True)
-                latest = sorted_snaps[0] if sorted_snaps else None
-
-            results[repo_name] = {
-                'description': description,
-                'status': 'ok',
-                'snapshot_count': len(snapshot_list),
-                'latest_backup': latest.get('time') if latest else None,
-                'latest_hostname': latest.get('hostname') if latest else None,
-                'latest_tags': latest.get('tags', []) if latest else []
-            }
-
-    return results
+    return {
+        'status': 'ok',
+        'total_snapshots': len(snapshot_list),
+        'hosts': results
+    }
 
 # === MCP Tools ===
 
@@ -771,23 +770,21 @@ async def list_tools():
 
     # Add Restic tools if enabled
     if CONFIG.get('restic', {}).get('enabled'):
-        repo_names = list(CONFIG.get('restic', {}).get('repos', {}).keys())
         tools.extend([
             Tool(
                 name="get_restic_overview",
-                description="Get overview of all backup repositories - shows last backup time, snapshot counts, and status for each configured repo. Use this to quickly check backup health across all machines.",
+                description="Get overview of all backups - shows last backup time, snapshot counts per host. Use this to quickly check backup health across all machines.",
                 inputSchema={"type": "object", "properties": {}}
             ),
             Tool(
                 name="get_restic_snapshots",
-                description="Get detailed snapshot list for a specific repository. Shows all backups with timestamps, tags, paths, and hostnames.",
+                description="Get detailed snapshot list. Shows all backups with timestamps, tags, paths, and hostnames. Can filter by hostname.",
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "repo_name": {
+                        "hostname": {
                             "type": "string",
-                            "enum": repo_names if repo_names else ["default"],
-                            "description": "Repository name (typically matches hostname)"
+                            "description": "Filter by hostname (e.g., 'server1', 'nas')"
                         },
                         "tag": {
                             "type": "string",
@@ -798,28 +795,17 @@ async def list_tools():
                             "description": "Only show the N most recent snapshots",
                             "default": 10
                         }
-                    },
-                    "required": ["repo_name"]
+                    }
                 }
             ),
             Tool(
                 name="get_restic_stats",
                 description="Get repository statistics including total size and file counts",
-                inputSchema={
-                    "type": "object",
-                    "properties": {
-                        "repo_name": {
-                            "type": "string",
-                            "enum": repo_names if repo_names else ["default"],
-                            "description": "Repository name"
-                        }
-                    },
-                    "required": ["repo_name"]
-                }
+                inputSchema={"type": "object", "properties": {}}
             ),
             Tool(
                 name="search_restic_snapshots",
-                description="Search for snapshots containing specific paths or tags across all repositories. Use this to answer questions like 'are my keys backed up?' or 'which backups include /etc?'",
+                description="Search for snapshots containing specific paths or tags. Use this to answer questions like 'are my keys backed up?' or 'which backups include /etc?'",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1469,22 +1455,22 @@ async def call_tool(name: str, arguments: dict):
     # === Restic Tools ===
 
     elif name == "get_restic_overview":
-        repos = await list_restic_repos()
+        overview = await get_restic_overview()
 
         result = {
             'description': CONFIG.get('restic', {}).get('description', 'Restic Backup Server'),
-            'rest_url': CONFIG.get('restic', {}).get('rest_url'),
-            'repositories': repos
+            'repo_url': CONFIG.get('restic', {}).get('repo_url'),
+            **overview
         }
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     elif name == "get_restic_snapshots":
-        repo_name = arguments["repo_name"]
+        hostname_filter = arguments.get("hostname")
         tag_filter = arguments.get("tag")
         last_n = arguments.get("last", 10)
 
-        snapshots = await query_restic(repo_name, 'snapshots')
+        snapshots = await query_restic('snapshots', host=hostname_filter)
 
         if 'error' in snapshots:
             return [TextContent(type="text", text=json.dumps(snapshots, indent=2))]
@@ -1513,26 +1499,21 @@ async def call_tool(name: str, arguments: dict):
             })
 
         result = {
-            'repo_name': repo_name,
-            'description': CONFIG.get('restic', {}).get('repos', {}).get(repo_name, ''),
             'snapshot_count': len(simplified),
-            'filter': {'tag': tag_filter} if tag_filter else None,
+            'filter': {'hostname': hostname_filter, 'tag': tag_filter} if (hostname_filter or tag_filter) else None,
             'snapshots': simplified
         }
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
     elif name == "get_restic_stats":
-        repo_name = arguments["repo_name"]
-
-        stats = await query_restic(repo_name, 'stats')
+        stats = await query_restic('stats')
 
         if 'error' in stats:
             return [TextContent(type="text", text=json.dumps(stats, indent=2))]
 
         result = {
-            'repo_name': repo_name,
-            'description': CONFIG.get('restic', {}).get('repos', {}).get(repo_name, ''),
+            'description': CONFIG.get('restic', {}).get('description', 'Restic Backup Server'),
             'stats': stats
         }
 
@@ -1543,47 +1524,41 @@ async def call_tool(name: str, arguments: dict):
         tag_filter = arguments.get("tag")
         hostname_filter = arguments.get("hostname")
 
-        restic_config = CONFIG.get('restic', {})
-        repos = restic_config.get('repos', {})
+        snapshots = await query_restic('snapshots')
 
+        if 'error' in snapshots:
+            return [TextContent(type="text", text=json.dumps(snapshots, indent=2))]
+
+        snapshot_list = snapshots if isinstance(snapshots, list) else []
         all_matches = []
 
-        for repo_name in repos.keys():
-            snapshots = await query_restic(repo_name, 'snapshots')
+        for snap in snapshot_list:
+            match = True
 
-            if 'error' in snapshots:
-                continue
+            # Filter by path
+            if path_contains:
+                paths = snap.get('paths', [])
+                if not any(path_contains.lower() in p.lower() for p in paths):
+                    match = False
 
-            snapshot_list = snapshots if isinstance(snapshots, list) else []
+            # Filter by tag
+            if tag_filter:
+                if tag_filter not in snap.get('tags', []):
+                    match = False
 
-            for snap in snapshot_list:
-                match = True
+            # Filter by hostname
+            if hostname_filter:
+                if hostname_filter.lower() != snap.get('hostname', '').lower():
+                    match = False
 
-                # Filter by path
-                if path_contains:
-                    paths = snap.get('paths', [])
-                    if not any(path_contains.lower() in p.lower() for p in paths):
-                        match = False
-
-                # Filter by tag
-                if tag_filter:
-                    if tag_filter not in snap.get('tags', []):
-                        match = False
-
-                # Filter by hostname
-                if hostname_filter:
-                    if hostname_filter.lower() != snap.get('hostname', '').lower():
-                        match = False
-
-                if match:
-                    all_matches.append({
-                        'repo': repo_name,
-                        'id': snap.get('short_id', snap.get('id', '')[:8]),
-                        'time': snap.get('time'),
-                        'hostname': snap.get('hostname'),
-                        'tags': snap.get('tags', []),
-                        'paths': snap.get('paths', [])
-                    })
+            if match:
+                all_matches.append({
+                    'id': snap.get('short_id', snap.get('id', '')[:8]),
+                    'time': snap.get('time'),
+                    'hostname': snap.get('hostname'),
+                    'tags': snap.get('tags', []),
+                    'paths': snap.get('paths', [])
+                })
 
         # Sort by time descending
         all_matches = sorted(all_matches, key=lambda x: x.get('time', ''), reverse=True)

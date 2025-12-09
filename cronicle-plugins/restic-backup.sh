@@ -2,11 +2,13 @@
 # Cronicle Plugin: Restic Backup
 # Deploy to: /opt/stacks/cronicle/data/plugins/restic-backup.sh on Cronicle servers
 #
+# Uses a single shared repository - all hosts back up to the same repo.
+# Restic automatically tags snapshots with the hostname.
+#
 # Required Cronicle job parameters:
 #   BACKUP_PATHS - Space-separated paths to back up
 #
 # Optional parameters:
-#   REPO_NAME        - Repository name (defaults to hostname)
 #   TAGS             - Space-separated tags (e.g., "daily stacks" or "weekly databases")
 #   EXCLUDE_PATTERNS - Space-separated exclude patterns
 #   KEEP_DAILY       - Days to keep (default: 7)
@@ -15,16 +17,10 @@
 
 set -euo pipefail
 
-# REST server (set via env var or Cronicle settings)
-RESTIC_REST_URL="${RESTIC_REST_URL:-http://your-nas:8000}"
+# Repository URL (set via env var or Cronicle settings)
+# Format: rest:http://nas:8000/repo-name
+RESTIC_REPO_URL="${RESTIC_REPO_URL:-rest:http://your-nas:8000/backups}"
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
-
-# REST server auth (for --private-repos mode)
-# Username = repo name, password from file or env
-RESTIC_REST_PASSWORD_FILE="${RESTIC_REST_PASSWORD_FILE:-/host/root/restic-rest.creds}"
-if [[ -f "$RESTIC_REST_PASSWORD_FILE" ]]; then
-    export RESTIC_REST_PASSWORD="$(cat "$RESTIC_REST_PASSWORD_FILE")"
-fi
 
 # Defaults
 KEEP_DAILY="${KEEP_DAILY:-7}"
@@ -37,15 +33,8 @@ if [[ -z "${BACKUP_PATHS:-}" ]]; then
     exit 1
 fi
 
-if [[ -z "${REPO_NAME:-}" ]]; then
-    REPO_NAME="$(hostname)"
-fi
-
-REPO="rest:${RESTIC_REST_URL}/${REPO_NAME}/"
-
 export RESTIC_PASSWORD_FILE
-export RESTIC_REPOSITORY="$REPO"
-export RESTIC_REST_USERNAME="$REPO_NAME"
+export RESTIC_REPOSITORY="$RESTIC_REPO_URL"
 
 # Build tag args
 TAG_ARGS=""
@@ -68,20 +57,22 @@ restic init 2>/dev/null || true
 
 # Run backup
 echo "Backing up: $BACKUP_PATHS"
-echo "Repository: $REPO"
+echo "Repository: $RESTIC_REPO_URL"
+echo "Hostname: $(hostname)"
 [[ -n "${TAGS:-}" ]] && echo "Tags: $TAGS"
 
 # shellcheck disable=SC2086
 restic backup $BACKUP_PATHS $TAG_ARGS $EXCLUDE_ARGS --verbose
 
-# Prune old snapshots
-echo "Pruning snapshots (keep daily:$KEEP_DAILY weekly:$KEEP_WEEKLY monthly:$KEEP_MONTHLY)"
+# Prune old snapshots for THIS host only
+echo "Pruning snapshots for $(hostname) (keep daily:$KEEP_DAILY weekly:$KEEP_WEEKLY monthly:$KEEP_MONTHLY)"
 restic forget \
+    --host "$(hostname)" \
     --keep-daily "$KEEP_DAILY" \
     --keep-weekly "$KEEP_WEEKLY" \
     --keep-monthly "$KEEP_MONTHLY" \
     --prune
 
 # Report success to Cronicle
-SNAPSHOT_COUNT=$(restic snapshots --json | jq 'length')
-echo "{\"complete\":1,\"code\":0,\"description\":\"Backup complete. $SNAPSHOT_COUNT snapshots in repo.\"}"
+HOST_SNAPSHOT_COUNT=$(restic snapshots --host "$(hostname)" --json | jq 'length')
+echo "{\"complete\":1,\"code\":0,\"description\":\"Backup complete. $HOST_SNAPSHOT_COUNT snapshots for $(hostname).\"}"

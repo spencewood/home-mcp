@@ -11,21 +11,35 @@ Plugin scripts for Cronicle job scheduler.
 
    Cronicle Workers                    NAS                      MCP Server
    ┌─────────────┐                ┌───────────────┐          ┌─────────────┐
-   │  worker-1   │──┐             │ Restic REST   │          │  home-mcp   │
+   │  server-1   │──┐             │ Restic REST   │          │  home-mcp   │
    ├─────────────┤  │   HTTP      │   Server      │   HTTP   │             │
-   │  worker-2   │──┼────────────▶│  :8000        │◀─────────│  Query      │
+   │  server-2   │──┼────────────▶│  :8000        │◀─────────│  Query      │
    ├─────────────┤  │             │               │          │  backups    │
-   │  worker-3   │──┤             │  /worker-1/   │          │             │
-   ├─────────────┤  │             │  /worker-2/   │          │  "When was  │
-   │  worker-4   │──┘             │  /worker-3/   │          │   last      │
-   └─────────────┘                │  /worker-4/   │          │   backup?"  │
+   │  server-3   │──┤             │  /backups/    │          │             │
+   ├─────────────┤  │             │  (single repo │          │  "When was  │
+   │  server-4   │──┘             │   all hosts)  │          │   last      │
+   └─────────────┘                │               │          │   backup?"  │
          │                        └───────────────┘          └─────────────┘
          │
+    All servers back up to ONE repo.
     Each worker only needs:
     • restic binary
     • One password (file or env var)
-    • REST server URL
+    • Repo URL
+
+    Restic auto-tags snapshots with hostname.
+    Deduplication works across ALL hosts.
 ```
+
+## Why Single Repo?
+
+| Aspect | Multi-Repo | Single Repo |
+|--------|------------|-------------|
+| Setup | Init repo per server | Init once |
+| Deduplication | Per-repo only | Cross-host (shared files dedupe!) |
+| Queries | Iterate all repos | One query, filter by host |
+| Config | Map of repos in config | Single URL |
+| Complexity | Higher | Lower |
 
 ## Why REST Server vs SFTP/SSH?
 
@@ -58,24 +72,33 @@ chmod +x /opt/stacks/cronicle/data/plugins/restic-backup.sh
    chmod 600 /root/restic.creds
    ```
 
-3. (Optional) Set env vars in Cronicle or system-wide:
+3. Set env vars in Cronicle or system-wide:
    ```bash
-   RESTIC_REST_URL=http://your-nas:8000
+   RESTIC_REPO_URL=rest:http://your-nas:8000/backups
    RESTIC_PASSWORD_FILE=/root/restic.creds
    ```
 
-That's it. No SSH keys, no complex auth.
+### Repository Initialization (One-time)
+
+Initialize the single repo from any machine:
+```bash
+export RESTIC_REPOSITORY="rest:http://your-nas:8000/backups"
+export RESTIC_PASSWORD_FILE=/root/restic.creds
+restic init
+```
+
+That's it. No SSH keys, no per-server repos.
 
 ## Scripts
 
 ### restic-backup.sh
 
-Restic backup plugin using REST server backend.
+Restic backup plugin using REST server backend. All hosts back up to a single shared repository.
 
 **Prerequisites:**
 - restic installed on the Cronicle server
 - Password file at `/host/root/restic.creds` (or set `RESTIC_PASSWORD_FILE` env var)
-- REST server running (override default with `RESTIC_REST_URL` env var)
+- Repo URL set via `RESTIC_REPO_URL` env var
 
 **Security:** No secrets in Cronicle job parameters. Password is read from file on disk.
 
@@ -83,12 +106,13 @@ Restic backup plugin using REST server backend.
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | BACKUP_PATHS | Yes | Space-separated paths to back up |
-| REPO_NAME | No | Repository name (defaults to hostname) |
 | TAGS | No | Space-separated tags for organizing/filtering snapshots |
 | EXCLUDE_PATTERNS | No | Space-separated exclude patterns |
 | KEEP_DAILY | No | Days to keep (default: 7) |
 | KEEP_WEEKLY | No | Weeks to keep (default: 4) |
 | KEEP_MONTHLY | No | Months to keep (default: 6) |
+
+Restic automatically tags each snapshot with the hostname. Prune only affects the current host's snapshots.
 
 **Example Cronicle job config:**
 ```
@@ -97,7 +121,7 @@ TAGS=daily stacks
 EXCLUDE_PATTERNS=*.log *.tmp node_modules
 ```
 
-Tags let you filter snapshots later: `restic snapshots --tag daily` or `restic snapshots --tag stacks`
+Tags let you filter snapshots later: `restic snapshots --tag daily` or `restic snapshots --host server1`
 
 ### restic-forget.sh
 
@@ -106,13 +130,13 @@ Standalone prune/forget script for cleaning up old snapshots. Use when you want 
 **Cronicle Job Parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| REPO_NAME | No | Repository name (defaults to hostname) |
+| HOST | No | Target hostname (defaults to current hostname) |
 | KEEP_LAST | No | Snapshots to keep (default: 3) |
 | KEEP_DAILY | No | Days to keep (default: 7) |
 | KEEP_WEEKLY | No | Weeks to keep (default: 4) |
 | KEEP_MONTHLY | No | Months to keep (default: 6) |
 
-**Note:** `restic-backup.sh` already runs forget/prune after each backup. This script is for running cleanup independently (e.g., weekly deep prune across all repos).
+**Note:** `restic-backup.sh` already runs forget/prune after each backup (for that host only). This script is for running cleanup independently.
 
 ### graphql-api.sh
 
@@ -148,18 +172,19 @@ Generic GraphQL API caller for triggering mutations/queries from Cronicle jobs.
 
 The home-mcp server can query backup status directly from the REST server. This enables natural language queries like:
 
-- "When was the last backup on worker-1?"
+- "When was the last backup on server1?"
 - "Are my keys backed up?"
 - "Show me all snapshots tagged 'stacks'"
+- "How much storage are backups using?"
 
 ### Available MCP Tools
 
 | Tool | Description |
 |------|-------------|
-| `get_restic_overview` | Overview of all repos with last backup times |
-| `get_restic_snapshots` | Detailed snapshot list for a repo |
+| `get_restic_overview` | Overview of all backups grouped by hostname |
+| `get_restic_snapshots` | Detailed snapshot list, can filter by hostname/tag |
 | `get_restic_stats` | Repository size and file counts |
-| `search_restic_snapshots` | Search across all repos by path, tag, or hostname |
+| `search_restic_snapshots` | Search snapshots by path, tag, or hostname |
 
 ### Configuration
 
@@ -169,17 +194,9 @@ Add to your `config.json`:
 {
   "restic": {
     "enabled": true,
-    "rest_url": "http://your-nas:8000",
+    "repo_url": "rest:http://your-nas:8000/backups",
     "password": "your-restic-password",
-    "description": "Restic REST server for backups",
-    "repos": {
-      "worker-1": "Workstation backups",
-      "worker-2": "Main server backups",
-      "worker-3": "Gateway backups",
-      "worker-4": "Keys and secrets backup"
-    }
+    "description": "Restic REST server for backups"
   }
 }
 ```
-
-The `repos` map is optional but helps the MCP server know which repositories to check and provides descriptions for context.
