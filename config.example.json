@@ -60,6 +60,18 @@
     "validator_indices": [123456, 123457],
     "description": "Ethereum validator node"
   },
+  "restic": {
+    "enabled": true,
+    "rest_url": "http://nas.local:8000",
+    "password": "YOUR_RESTIC_PASSWORD",
+    "description": "Restic REST server for backups",
+    "repos": {
+      "worker-1": "Workstation backups",
+      "worker-2": "Main server backups",
+      "worker-3": "Gateway backups",
+      "worker-4": "Keys and secrets backup"
+    }
+  },
   "context": {
     "location": "Home Lab",
     "monitoring_strategy": "Automated health checks with alert notifications on failures",

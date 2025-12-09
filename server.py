@@ -397,6 +397,103 @@ async def query_eth_beacon(endpoint: str):
     except Exception as e:
         return {'error': str(e)}
 
+async def query_restic(repo_name: str, command: str = 'snapshots'):
+    """Query restic REST server for repository info
+
+    Uses restic CLI to query the REST server. Commands supported:
+    - snapshots: list all snapshots
+    - stats: repository statistics
+    - check: verify repository integrity (slow)
+    """
+    if not CONFIG.get('restic', {}).get('enabled'):
+        return {'error': 'Restic not enabled in config'}
+
+    restic_config = CONFIG['restic']
+    rest_url = restic_config['rest_url']
+    password = restic_config['password']
+
+    repo_url = f"rest:{rest_url}/{repo_name}/"
+
+    # Build restic command
+    cmd = ['restic', '-r', repo_url, '--json']
+
+    if command == 'snapshots':
+        cmd.append('snapshots')
+    elif command == 'stats':
+        cmd.extend(['stats', '--mode', 'raw-data'])
+    elif command == 'check':
+        cmd.append('check')
+    else:
+        return {'error': f'Unknown command: {command}'}
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**dict(__import__('os').environ), 'RESTIC_PASSWORD': password}
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+
+        if proc.returncode != 0:
+            error_msg = stderr.decode().strip()
+            # Check for common errors
+            if 'repository does not exist' in error_msg.lower():
+                return {'error': 'Repository not initialized', 'exists': False}
+            return {'error': error_msg}
+
+        # Parse JSON output
+        output = stdout.decode().strip()
+        if output:
+            return json.loads(output)
+        return {'success': True, 'message': 'Command completed'}
+
+    except asyncio.TimeoutError:
+        return {'error': 'Restic command timed out'}
+    except json.JSONDecodeError as e:
+        return {'error': f'Invalid JSON response: {str(e)}', 'raw': stdout.decode()[:500]}
+    except Exception as e:
+        return {'error': str(e)}
+
+async def list_restic_repos():
+    """List all configured restic repositories and check their status"""
+    if not CONFIG.get('restic', {}).get('enabled'):
+        return {'error': 'Restic not enabled in config'}
+
+    restic_config = CONFIG['restic']
+    repos = restic_config.get('repos', {})
+
+    results = {}
+    for repo_name, description in repos.items():
+        # Quick check - just get snapshots
+        snapshots = await query_restic(repo_name, 'snapshots')
+
+        if 'error' in snapshots:
+            results[repo_name] = {
+                'description': description,
+                'status': 'error',
+                'error': snapshots['error'],
+                'exists': snapshots.get('exists', True)
+            }
+        else:
+            snapshot_list = snapshots if isinstance(snapshots, list) else []
+            latest = None
+            if snapshot_list:
+                # Sort by time and get most recent
+                sorted_snaps = sorted(snapshot_list, key=lambda x: x.get('time', ''), reverse=True)
+                latest = sorted_snaps[0] if sorted_snaps else None
+
+            results[repo_name] = {
+                'description': description,
+                'status': 'ok',
+                'snapshot_count': len(snapshot_list),
+                'latest_backup': latest.get('time') if latest else None,
+                'latest_hostname': latest.get('hostname') if latest else None,
+                'latest_tags': latest.get('tags', []) if latest else []
+            }
+
+    return results
+
 # === MCP Tools ===
 
 @server.list_tools()
@@ -426,7 +523,7 @@ async def list_tools():
         ),
         Tool(
             name="get_network_stats",
-            description="Get network interface statistics (bandwidth, packets, errors) for a server. For cheese server, this includes bonded interface stats.",
+            description="Get network interface statistics (bandwidth, packets, errors) for a server. Includes bonded interface stats where applicable.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -524,7 +621,7 @@ async def list_tools():
         tools.extend([
             Tool(
                 name="get_dozzle_hosts",
-                description="Get all hosts monitored by Dozzle master instance (burger, cheese, tomato, fries)",
+                description="Get all hosts monitored by Dozzle master instance",
                 inputSchema={"type": "object", "properties": {}}
             ),
             Tool(
@@ -669,6 +766,77 @@ async def list_tools():
                 name="get_eth_rewards",
                 description="Get validator rewards summary",
                 inputSchema={"type": "object", "properties": {}}
+            ),
+        ])
+
+    # Add Restic tools if enabled
+    if CONFIG.get('restic', {}).get('enabled'):
+        repo_names = list(CONFIG.get('restic', {}).get('repos', {}).keys())
+        tools.extend([
+            Tool(
+                name="get_restic_overview",
+                description="Get overview of all backup repositories - shows last backup time, snapshot counts, and status for each configured repo. Use this to quickly check backup health across all machines.",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_restic_snapshots",
+                description="Get detailed snapshot list for a specific repository. Shows all backups with timestamps, tags, paths, and hostnames.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "repo_name": {
+                            "type": "string",
+                            "enum": repo_names if repo_names else ["default"],
+                            "description": "Repository name (typically matches hostname)"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "Filter by tag (e.g., 'daily', 'stacks', 'keys')"
+                        },
+                        "last": {
+                            "type": "integer",
+                            "description": "Only show the N most recent snapshots",
+                            "default": 10
+                        }
+                    },
+                    "required": ["repo_name"]
+                }
+            ),
+            Tool(
+                name="get_restic_stats",
+                description="Get repository statistics including total size and file counts",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "repo_name": {
+                            "type": "string",
+                            "enum": repo_names if repo_names else ["default"],
+                            "description": "Repository name"
+                        }
+                    },
+                    "required": ["repo_name"]
+                }
+            ),
+            Tool(
+                name="search_restic_snapshots",
+                description="Search for snapshots containing specific paths or tags across all repositories. Use this to answer questions like 'are my keys backed up?' or 'which backups include /etc?'",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "path_contains": {
+                            "type": "string",
+                            "description": "Search for snapshots containing this path substring (e.g., 'keys', '.ssh', 'docker')"
+                        },
+                        "tag": {
+                            "type": "string",
+                            "description": "Filter by tag"
+                        },
+                        "hostname": {
+                            "type": "string",
+                            "description": "Filter by hostname"
+                        }
+                    }
+                }
             ),
         ])
 
@@ -1294,6 +1462,140 @@ async def call_tool(name: str, arguments: dict):
         result = {
             'description': eth_config.get('description', 'Ethereum Validators'),
             'validators': validators
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    # === Restic Tools ===
+
+    elif name == "get_restic_overview":
+        repos = await list_restic_repos()
+
+        result = {
+            'description': CONFIG.get('restic', {}).get('description', 'Restic Backup Server'),
+            'rest_url': CONFIG.get('restic', {}).get('rest_url'),
+            'repositories': repos
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_restic_snapshots":
+        repo_name = arguments["repo_name"]
+        tag_filter = arguments.get("tag")
+        last_n = arguments.get("last", 10)
+
+        snapshots = await query_restic(repo_name, 'snapshots')
+
+        if 'error' in snapshots:
+            return [TextContent(type="text", text=json.dumps(snapshots, indent=2))]
+
+        snapshot_list = snapshots if isinstance(snapshots, list) else []
+
+        # Filter by tag if specified
+        if tag_filter and snapshot_list:
+            snapshot_list = [s for s in snapshot_list if tag_filter in s.get('tags', [])]
+
+        # Sort by time descending
+        snapshot_list = sorted(snapshot_list, key=lambda x: x.get('time', ''), reverse=True)
+
+        # Limit to last N
+        snapshot_list = snapshot_list[:last_n]
+
+        # Simplify output
+        simplified = []
+        for snap in snapshot_list:
+            simplified.append({
+                'id': snap.get('short_id', snap.get('id', '')[:8]),
+                'time': snap.get('time'),
+                'hostname': snap.get('hostname'),
+                'tags': snap.get('tags', []),
+                'paths': snap.get('paths', [])
+            })
+
+        result = {
+            'repo_name': repo_name,
+            'description': CONFIG.get('restic', {}).get('repos', {}).get(repo_name, ''),
+            'snapshot_count': len(simplified),
+            'filter': {'tag': tag_filter} if tag_filter else None,
+            'snapshots': simplified
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_restic_stats":
+        repo_name = arguments["repo_name"]
+
+        stats = await query_restic(repo_name, 'stats')
+
+        if 'error' in stats:
+            return [TextContent(type="text", text=json.dumps(stats, indent=2))]
+
+        result = {
+            'repo_name': repo_name,
+            'description': CONFIG.get('restic', {}).get('repos', {}).get(repo_name, ''),
+            'stats': stats
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "search_restic_snapshots":
+        path_contains = arguments.get("path_contains")
+        tag_filter = arguments.get("tag")
+        hostname_filter = arguments.get("hostname")
+
+        restic_config = CONFIG.get('restic', {})
+        repos = restic_config.get('repos', {})
+
+        all_matches = []
+
+        for repo_name in repos.keys():
+            snapshots = await query_restic(repo_name, 'snapshots')
+
+            if 'error' in snapshots:
+                continue
+
+            snapshot_list = snapshots if isinstance(snapshots, list) else []
+
+            for snap in snapshot_list:
+                match = True
+
+                # Filter by path
+                if path_contains:
+                    paths = snap.get('paths', [])
+                    if not any(path_contains.lower() in p.lower() for p in paths):
+                        match = False
+
+                # Filter by tag
+                if tag_filter:
+                    if tag_filter not in snap.get('tags', []):
+                        match = False
+
+                # Filter by hostname
+                if hostname_filter:
+                    if hostname_filter.lower() != snap.get('hostname', '').lower():
+                        match = False
+
+                if match:
+                    all_matches.append({
+                        'repo': repo_name,
+                        'id': snap.get('short_id', snap.get('id', '')[:8]),
+                        'time': snap.get('time'),
+                        'hostname': snap.get('hostname'),
+                        'tags': snap.get('tags', []),
+                        'paths': snap.get('paths', [])
+                    })
+
+        # Sort by time descending
+        all_matches = sorted(all_matches, key=lambda x: x.get('time', ''), reverse=True)
+
+        result = {
+            'search_criteria': {
+                'path_contains': path_contains,
+                'tag': tag_filter,
+                'hostname': hostname_filter
+            },
+            'match_count': len(all_matches),
+            'matches': all_matches[:50]  # Limit to 50 results
         }
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]

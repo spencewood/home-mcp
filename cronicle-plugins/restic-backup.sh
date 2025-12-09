@@ -15,9 +15,16 @@
 
 set -euo pipefail
 
-# REST server (override with RESTIC_REST_URL env var)
-RESTIC_REST_URL="${RESTIC_REST_URL:-http://nas:8000}"
+# REST server (set via env var or Cronicle settings)
+RESTIC_REST_URL="${RESTIC_REST_URL:-http://your-nas:8000}"
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
+
+# REST server auth (for --private-repos mode)
+# Username = repo name, password from file or env
+RESTIC_REST_PASSWORD_FILE="${RESTIC_REST_PASSWORD_FILE:-/host/root/restic-rest.creds}"
+if [[ -f "$RESTIC_REST_PASSWORD_FILE" ]]; then
+    export RESTIC_REST_PASSWORD="$(cat "$RESTIC_REST_PASSWORD_FILE")"
+fi
 
 # Defaults
 KEEP_DAILY="${KEEP_DAILY:-7}"
@@ -38,6 +45,7 @@ REPO="rest:${RESTIC_REST_URL}/${REPO_NAME}/"
 
 export RESTIC_PASSWORD_FILE
 export RESTIC_REPOSITORY="$REPO"
+export RESTIC_REST_USERNAME="$REPO_NAME"
 
 # Build tag args
 TAG_ARGS=""
