@@ -15,7 +15,7 @@ set -euo pipefail
 
 # REST server (override with RESTIC_REST_URL env var)
 RESTIC_REST_URL="${RESTIC_REST_URL:-http://nas:8000}"
-RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/root/restic.creds}"
+RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
 
 # Defaults
 KEEP_LAST="${KEEP_LAST:-3}"

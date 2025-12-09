@@ -19,7 +19,7 @@ Restic backup plugin using REST server backend.
 
 **Prerequisites:**
 - restic installed on the Cronicle server
-- Password file at `/root/restic.creds` (or set `RESTIC_PASSWORD_FILE` env var)
+- Password file at `/host/root/restic.creds` (or set `RESTIC_PASSWORD_FILE` env var)
 - REST server running (default: `http://nas:8000`, override with `RESTIC_REST_URL` env var)
 
 **Security:** No secrets in Cronicle job parameters. Password is read from file on disk.
@@ -29,6 +29,7 @@ Restic backup plugin using REST server backend.
 |-----------|----------|-------------|
 | BACKUP_PATHS | Yes | Space-separated paths to back up |
 | REPO_NAME | No | Repository name (defaults to hostname) |
+| TAGS | No | Space-separated tags for organizing/filtering snapshots |
 | EXCLUDE_PATTERNS | No | Space-separated exclude patterns |
 | KEEP_DAILY | No | Days to keep (default: 7) |
 | KEEP_WEEKLY | No | Weeks to keep (default: 4) |
@@ -37,11 +38,11 @@ Restic backup plugin using REST server backend.
 **Example Cronicle job config:**
 ```
 BACKUP_PATHS=/opt/stacks /home/user
+TAGS=daily stacks
 EXCLUDE_PATTERNS=*.log *.tmp node_modules
-KEEP_DAILY=7
-KEEP_WEEKLY=4
-KEEP_MONTHLY=12
 ```
+
+Tags let you filter snapshots later: `restic snapshots --tag daily` or `restic snapshots --tag stacks`
 
 ### restic-forget.sh
 
