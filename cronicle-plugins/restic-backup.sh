@@ -7,6 +7,7 @@
 #
 # Required Cronicle job parameters:
 #   BACKUP_PATHS - Space-separated paths to back up
+#   REPO_URL     - Restic repository URL (e.g., rest:http://nas:8000/backups)
 #
 # Optional parameters:
 #   TAGS             - Space-separated tags (e.g., "daily stacks" or "weekly databases")
@@ -17,9 +18,15 @@
 
 set -euo pipefail
 
-# Repository URL (set via env var or Cronicle settings)
-# Format: rest:http://nas:8000/repo-name
-RESTIC_REPO_URL="${RESTIC_REPO_URL:-rest:http://your-nas:8000/backups}"
+# Repository URL - from job param, env var, or fail
+if [[ -n "${REPO_URL:-}" ]]; then
+    RESTIC_REPO_URL="$REPO_URL"
+elif [[ -n "${RESTIC_REPO_URL:-}" ]]; then
+    RESTIC_REPO_URL="$RESTIC_REPO_URL"
+else
+    echo '{"complete":1,"code":1,"description":"REPO_URL not set"}'
+    exit 1
+fi
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
 
 # Defaults

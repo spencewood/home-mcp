@@ -4,6 +4,9 @@
 #
 # Uses a single shared repository - operates on the calling host's snapshots only.
 #
+# Required parameters:
+#   REPO_URL     - Restic repository URL (e.g., rest:http://nas:8000/backups)
+#
 # Optional parameters:
 #   HOST         - Target hostname (defaults to current hostname)
 #   KEEP_LAST    - Snapshots to keep (default: 3)
@@ -13,8 +16,15 @@
 
 set -euo pipefail
 
-# Repository URL (set via env var or Cronicle settings)
-RESTIC_REPO_URL="${RESTIC_REPO_URL:-rest:http://your-nas:8000/backups}"
+# Repository URL - from job param, env var, or fail
+if [[ -n "${REPO_URL:-}" ]]; then
+    RESTIC_REPO_URL="$REPO_URL"
+elif [[ -n "${RESTIC_REPO_URL:-}" ]]; then
+    RESTIC_REPO_URL="$RESTIC_REPO_URL"
+else
+    echo '{"complete":1,"code":1,"description":"REPO_URL not set"}'
+    exit 1
+fi
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
 
 # Defaults

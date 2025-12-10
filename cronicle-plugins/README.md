@@ -98,13 +98,13 @@ Restic backup plugin using REST server backend. All hosts back up to a single sh
 **Prerequisites:**
 - restic installed on the Cronicle server
 - Password file at `/host/root/restic.creds` (or set `RESTIC_PASSWORD_FILE` env var)
-- Repo URL set via `RESTIC_REPO_URL` env var
 
 **Security:** No secrets in Cronicle job parameters. Password is read from file on disk.
 
 **Cronicle Job Parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
+| REPO_URL | Yes | Restic repository URL (e.g., `rest:http://nas:8000/backups`) |
 | BACKUP_PATHS | Yes | Space-separated paths to back up |
 | TAGS | No | Space-separated tags for organizing/filtering snapshots |
 | EXCLUDE_PATTERNS | No | Space-separated exclude patterns |
@@ -116,6 +116,7 @@ Restic automatically tags each snapshot with the hostname. Prune only affects th
 
 **Example Cronicle job config:**
 ```
+REPO_URL=rest:http://fries:8000/backups
 BACKUP_PATHS=/opt/stacks /home/user
 TAGS=daily stacks
 EXCLUDE_PATTERNS=*.log *.tmp node_modules
@@ -130,6 +131,7 @@ Standalone prune/forget script for cleaning up old snapshots. Use when you want 
 **Cronicle Job Parameters:**
 | Parameter | Required | Description |
 |-----------|----------|-------------|
+| REPO_URL | Yes | Restic repository URL (e.g., `rest:http://nas:8000/backups`) |
 | HOST | No | Target hostname (defaults to current hostname) |
 | KEEP_LAST | No | Snapshots to keep (default: 3) |
 | KEEP_DAILY | No | Days to keep (default: 7) |
