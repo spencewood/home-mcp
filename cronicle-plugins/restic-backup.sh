@@ -81,5 +81,4 @@ restic forget \
     --prune
 
 # Report success to Cronicle
-HOST_SNAPSHOT_COUNT=$(restic snapshots --host "$(hostname)" --json | jq 'length')
-echo "{\"complete\":1,\"code\":0,\"description\":\"Backup complete. $HOST_SNAPSHOT_COUNT snapshots for $(hostname).\"}"
+echo '{"complete":1,"code":0,"description":"Backup and prune complete."}'
