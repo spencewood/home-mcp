@@ -2,7 +2,10 @@ config.json
 *.secret
 __pycache__/
 *.pyc
-logs/
 .env
 *.swp
 .DS_Store
+
+# Cronicle runtime data (persists on each host)
+cronicle/data/
+cronicle/docker-compose.local.yml

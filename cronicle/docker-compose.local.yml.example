@@ -1,0 +1,55 @@
+# Local overrides - copy to docker-compose.local.yml and customize
+# This file is gitignored, so your local config stays on each server
+#
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+services:
+  cronicle:
+    hostname: CHANGEME
+
+    volumes:
+      # Add host-specific volume mounts here
+      # - /some/local/path:/container/path:ro
+      - /root:/host/root:ro
+
+    environment:
+      - HOSTNAME=CHANGEME
+
+      # For workers only:
+      # - IS_WORKER=true
+
+      # For master only (pick one server as master):
+      # - CRONICLE_email_from=cronicle@hostname
+      # - CRONICLE_smtp_hostname=localhost
+      # - CRONICLE_smtp_port=8025
+      # - CRONICLE_base_app_url=https://cronicle.example.com
+
+
+# Example: lettuce (worker)
+# -------------------------
+# services:
+#   cronicle:
+#     hostname: lettuce
+#     volumes:
+#       - /var/spool/asterisk/backup/:/backup:ro
+#       - /root:/host/root:ro
+#     environment:
+#       - HOSTNAME=lettuce
+#       - IS_WORKER=true
+
+
+# Example: burger (master)
+# ------------------------
+# services:
+#   cronicle:
+#     hostname: burger
+#     volumes:
+#       - /opt:/host/opt:ro
+#       - /root:/host/root:ro
+#     environment:
+#       - HOSTNAME=burger
+#       - RESTIC_REST_URL=http://fries:8000
+#       - CRONICLE_email_from=cronicle@burger
+#       - CRONICLE_smtp_hostname=localhost
+#       - CRONICLE_smtp_port=8025
+#       - CRONICLE_base_app_url=https://cronicle.spencewood.com

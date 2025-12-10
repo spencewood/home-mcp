@@ -29,11 +29,6 @@ else
 fi
 RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-/host/root/restic.creds}"
 
-# Defaults
-KEEP_DAILY="${KEEP_DAILY:-7}"
-KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
-KEEP_MONTHLY="${KEEP_MONTHLY:-6}"
-
 # Validate required params
 if [[ -z "${BACKUP_PATHS:-}" ]]; then
     echo '{"complete":1,"code":1,"description":"BACKUP_PATHS not set"}'
@@ -71,14 +66,5 @@ echo "Hostname: $(hostname)"
 # shellcheck disable=SC2086
 restic backup $BACKUP_PATHS $TAG_ARGS $EXCLUDE_ARGS --verbose
 
-# Prune old snapshots for THIS host only
-echo "Pruning snapshots for $(hostname) (keep daily:$KEEP_DAILY weekly:$KEEP_WEEKLY monthly:$KEEP_MONTHLY)"
-restic forget \
-    --host "$(hostname)" \
-    --keep-daily "$KEEP_DAILY" \
-    --keep-weekly "$KEEP_WEEKLY" \
-    --keep-monthly "$KEEP_MONTHLY" \
-    --prune
-
 # Report success to Cronicle
-echo '{"complete":1,"code":0,"description":"Backup and prune complete."}'
+echo '{"complete":1,"code":0,"description":"Backup complete."}'

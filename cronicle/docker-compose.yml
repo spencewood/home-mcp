@@ -1,0 +1,33 @@
+# Base Cronicle configuration - shared across all servers
+# Local overrides go in docker-compose.local.yml (gitignored)
+#
+# Deploy: docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
+services:
+  cronicle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cronicle
+    restart: unless-stopped
+    volumes:
+      # Time sync (all hosts)
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      # Cronicle data directories
+      - ./data/data:/opt/cronicle/data:rw
+      - ./data/logs:/opt/cronicle/logs:rw
+      # Plugins from repo (read-only, shared across all hosts)
+      - ./plugins:/opt/cronicle/plugins:ro
+      # System access for monitoring
+      - /proc:/proc:ro
+      - /sys:/sys:ro
+      - /dev:/dev:ro
+      # SSH for remote operations
+      - /root/.ssh:/root/.ssh:rw
+    environment:
+      - CRONICLE_secret_key=28b04eb36256f010d1dc831ef55755db
+      - CRONICLE_WebServer__http_bind_address=0.0.0.0
+    network_mode: host
+
+networks: {}

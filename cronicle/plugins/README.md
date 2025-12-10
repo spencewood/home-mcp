@@ -108,11 +108,8 @@ Restic backup plugin using REST server backend. All hosts back up to a single sh
 | BACKUP_PATHS | Yes | Space-separated paths to back up |
 | TAGS | No | Space-separated tags for organizing/filtering snapshots |
 | EXCLUDE_PATTERNS | No | Space-separated exclude patterns |
-| KEEP_DAILY | No | Days to keep (default: 7) |
-| KEEP_WEEKLY | No | Weeks to keep (default: 4) |
-| KEEP_MONTHLY | No | Months to keep (default: 6) |
 
-Restic automatically tags each snapshot with the hostname. Prune only affects the current host's snapshots.
+Restic automatically tags each snapshot with the hostname. Use `restic-forget.sh` separately for pruning.
 
 **Example Cronicle job config:**
 ```
