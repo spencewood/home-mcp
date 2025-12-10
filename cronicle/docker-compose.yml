@@ -25,6 +25,8 @@ services:
       - /dev:/dev:ro
       # SSH for remote operations
       - /root/.ssh:/root/.ssh:rw
+      # Health check script
+      - ./health-check.sh:/scripts/health-check.sh:ro
     environment:
       - CRONICLE_secret_key=28b04eb36256f010d1dc831ef55755db
       - CRONICLE_WebServer__http_bind_address=0.0.0.0
