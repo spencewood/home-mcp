@@ -13,17 +13,25 @@ set -euo pipefail
 # Read JSON input from Cronicle
 JSON_INPUT=$(cat)
 
-# Parse parameters from JSON (params are nested under .params)
-if ! command -v jq >/dev/null 2>&1; then
-    echo "ERROR: jq is required for this plugin"
-    echo '{"complete":1,"code":1,"description":"jq is not installed"}'
-    exit 1
-fi
+# Parse parameters from JSON using grep/sed (no jq dependency)
+# Extract value for a given key from params object
+get_param() {
+    local key="$1"
+    local default="${2:-}"
+    # Look for "key": "value" or "key":"value" patterns within params
+    local value
+    value=$(echo "$JSON_INPUT" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+    if [[ -z "$value" ]]; then
+        echo "$default"
+    else
+        echo "$value"
+    fi
+}
 
-API_URL=$(echo "$JSON_INPUT" | jq -r '.params.api_url // empty')
-API_KEY=$(echo "$JSON_INPUT" | jq -r '.params.api_key // empty')
-GRAPHQL_QUERY=$(echo "$JSON_INPUT" | jq -r '.params.graphql_query // empty')
-DESCRIPTION=$(echo "$JSON_INPUT" | jq -r '.params.description // "GraphQL API call"')
+API_URL=$(get_param "api_url" "")
+API_KEY=$(get_param "api_key" "")
+GRAPHQL_QUERY=$(get_param "graphql_query" "")
+DESCRIPTION=$(get_param "description" "GraphQL API call")
 
 # Allow env var overrides for sensitive values
 API_KEY="${GRAPHQL_API_KEY:-$API_KEY}"
@@ -58,7 +66,19 @@ echo '{"progress":0.3,"description":"Sending GraphQL request..."}'
 TEMP_FILE=$(mktemp)
 trap 'rm -f "$TEMP_FILE"' EXIT
 
-jq -n --arg query "$GRAPHQL_QUERY" '{query: $query}' > "$TEMP_FILE"
+# Escape special characters for JSON and build payload
+escape_json() {
+    local str="$1"
+    str="${str//\\/\\\\}"      # Escape backslashes first
+    str="${str//\"/\\\"}"      # Escape double quotes
+    str="${str//$'\n'/\\n}"    # Escape newlines
+    str="${str//$'\r'/\\r}"    # Escape carriage returns
+    str="${str//$'\t'/\\t}"    # Escape tabs
+    echo "$str"
+}
+
+ESCAPED_QUERY=$(escape_json "$GRAPHQL_QUERY")
+echo "{\"query\": \"$ESCAPED_QUERY\"}" > "$TEMP_FILE"
 
 echo "Payload:"
 cat "$TEMP_FILE"
@@ -80,9 +100,13 @@ echo "Response: $RESPONSE_BODY"
 echo ""
 
 if [[ "$HTTP_CODE" -ge 200 ]] && [[ "$HTTP_CODE" -lt 300 ]]; then
-    # Check for GraphQL errors in response
-    if echo "$RESPONSE_BODY" | jq -e '.errors' >/dev/null 2>&1; then
-        ERRORS=$(echo "$RESPONSE_BODY" | jq -r '.errors[0].message // "Unknown GraphQL error"')
+    # Check for GraphQL errors in response (simple pattern match, no jq)
+    if echo "$RESPONSE_BODY" | grep -q '"errors"[[:space:]]*:'; then
+        # Try to extract the first error message
+        ERRORS=$(echo "$RESPONSE_BODY" | grep -o '"message"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+        if [[ -z "$ERRORS" ]]; then
+            ERRORS="Unknown GraphQL error"
+        fi
         echo "GraphQL Error: $ERRORS"
         echo '{"complete":1,"code":1,"description":"GraphQL error: '"$ERRORS"'"}'
         exit 1

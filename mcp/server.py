@@ -493,6 +493,119 @@ async def get_restic_overview():
         'hosts': results
     }
 
+# UniFi session cache
+_unifi_session = None
+_unifi_cookies = None
+
+async def unifi_login():
+    """Login to UniFi controller and cache the session"""
+    global _unifi_session, _unifi_cookies
+
+    if not CONFIG.get('unifi', {}).get('enabled'):
+        return None, {'error': 'UniFi not enabled in config'}
+
+    unifi_config = CONFIG['unifi']
+    url = f"{unifi_config['url']}/api/login"
+
+    verify_ssl = unifi_config.get('verify_ssl', False)
+    connector = aiohttp.TCPConnector(ssl=False if not verify_ssl else None)
+
+    try:
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        session = aiohttp.ClientSession(connector=connector, headers=headers)
+        payload = {
+            'username': unifi_config['username'],
+            'password': unifi_config['password']
+        }
+
+        async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                _unifi_session = session
+                _unifi_cookies = resp.cookies
+                return session, None
+            else:
+                # Try to get error details from response
+                try:
+                    error_body = await resp.text()
+                except:
+                    error_body = 'Could not read response body'
+                await session.close()
+                return None, {'error': f'Login failed: HTTP {resp.status}', 'details': error_body[:500]}
+    except Exception as e:
+        if session:
+            await session.close()
+        return None, {'error': f'Login failed: {str(e)}'}
+
+async def query_unifi(endpoint: str, method: str = 'GET', data: dict = None):
+    """Query UniFi controller API"""
+    global _unifi_session, _unifi_cookies
+
+    if not CONFIG.get('unifi', {}).get('enabled'):
+        return {'error': 'UniFi not enabled in config'}
+
+    unifi_config = CONFIG['unifi']
+    site = unifi_config.get('site', 'default')
+
+    # Build URL - endpoints starting with 'api/' are controller-level, others are site-level
+    if endpoint.startswith('api/'):
+        url = f"{unifi_config['url']}/{endpoint}"
+    else:
+        url = f"{unifi_config['url']}/api/s/{site}/{endpoint}"
+
+    verify_ssl = unifi_config.get('verify_ssl', False)
+
+    async def make_request(session):
+        try:
+            if method == 'GET':
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        return result.get('data', result)
+                    elif resp.status == 401:
+                        return {'error': 'Unauthorized', 'needs_reauth': True}
+                    else:
+                        return {'error': f'HTTP {resp.status}'}
+            else:  # POST
+                async with session.post(url, json=data or {}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        return result.get('data', result)
+                    elif resp.status == 401:
+                        return {'error': 'Unauthorized', 'needs_reauth': True}
+                    else:
+                        return {'error': f'HTTP {resp.status}'}
+        except asyncio.TimeoutError:
+            return {'error': 'Request timed out'}
+        except Exception as e:
+            return {'error': str(e)}
+
+    # Try with existing session first
+    if _unifi_session and not _unifi_session.closed:
+        result = await make_request(_unifi_session)
+        if not (isinstance(result, dict) and result.get('needs_reauth')):
+            return result
+
+    # Need to login (first time or re-auth)
+    session, error = await unifi_login()
+    if error:
+        return error
+
+    return await make_request(session)
+
+async def query_unifi_cmd(manager: str, command: str, params: dict = None):
+    """Execute a UniFi command via cmd endpoint"""
+    if not CONFIG.get('unifi', {}).get('enabled'):
+        return {'error': 'UniFi not enabled in config'}
+
+    payload = {'cmd': command}
+    if params:
+        payload.update(params)
+
+    return await query_unifi(f'cmd/{manager}', method='POST', data=payload)
+
 # === MCP Tools ===
 
 @server.list_tools()
@@ -823,6 +936,128 @@ async def list_tools():
                         }
                     }
                 }
+            ),
+        ])
+
+    # Add UniFi tools if enabled
+    if CONFIG.get('unifi', {}).get('enabled'):
+        tools.extend([
+            Tool(
+                name="get_unifi_health",
+                description="Get overall UniFi network health status including subsystems (WLAN, WAN, LAN, VPN)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_devices",
+                description="Get all UniFi devices (APs, switches, gateways) with status, firmware, uptime, and connection info",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_clients",
+                description="Get all connected clients with IP, MAC, hostname, connection type, signal strength, and bandwidth usage",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "active_only": {
+                            "type": "boolean",
+                            "description": "Only show currently connected clients (default: true)",
+                            "default": True
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_unifi_client_details",
+                description="Get detailed info for a specific client by MAC address including history and stats",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "mac": {
+                            "type": "string",
+                            "description": "Client MAC address (e.g., 'aa:bb:cc:dd:ee:ff')"
+                        }
+                    },
+                    "required": ["mac"]
+                }
+            ),
+            Tool(
+                name="get_unifi_wlans",
+                description="Get all configured wireless networks (SSIDs) with security settings and status",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_networks",
+                description="Get all configured networks (VLANs, subnets) with DHCP settings",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_port_forwards",
+                description="Get all port forwarding rules",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_firewall_rules",
+                description="Get user-defined firewall rules",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_firewall_groups",
+                description="Get firewall groups (IP groups, port groups)",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_routing",
+                description="Get static routes configuration",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_dpi_stats",
+                description="Get Deep Packet Inspection statistics - application and category traffic breakdown",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_events",
+                description="Get recent network events (connections, disconnections, alerts)",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "integer",
+                            "description": "Number of events to retrieve (default: 50, max: 500)",
+                            "default": 50
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_unifi_alarms",
+                description="Get active and recent alarms/alerts",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_rogues",
+                description="Get detected rogue/neighboring access points",
+                inputSchema={"type": "object", "properties": {}}
+            ),
+            Tool(
+                name="get_unifi_site_stats",
+                description="Get site-wide traffic statistics for a time period",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "period": {
+                            "type": "string",
+                            "enum": ["hourly", "daily", "monthly"],
+                            "description": "Statistics period (default: daily)",
+                            "default": "daily"
+                        }
+                    }
+                }
+            ),
+            Tool(
+                name="get_unifi_sysinfo",
+                description="Get UniFi controller system information and version",
+                inputSchema={"type": "object", "properties": {}}
             ),
         ])
 
@@ -1571,6 +1806,249 @@ async def call_tool(name: str, arguments: dict):
             },
             'match_count': len(all_matches),
             'matches': all_matches[:50]  # Limit to 50 results
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    # === UniFi Tools ===
+
+    elif name == "get_unifi_health":
+        health = await query_unifi('stat/health')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'health': health
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_devices":
+        devices = await query_unifi('stat/device')
+
+        if isinstance(devices, list):
+            # Simplify device info
+            simplified = []
+            for dev in devices:
+                simplified.append({
+                    'name': dev.get('name', dev.get('hostname', 'Unknown')),
+                    'mac': dev.get('mac'),
+                    'model': dev.get('model'),
+                    'type': dev.get('type'),
+                    'ip': dev.get('ip'),
+                    'state': dev.get('state'),
+                    'adopted': dev.get('adopted'),
+                    'uptime': dev.get('uptime'),
+                    'version': dev.get('version'),
+                    'upgradable': dev.get('upgradable'),
+                    'num_sta': dev.get('num_sta'),  # connected clients
+                    'tx_bytes': dev.get('tx_bytes'),
+                    'rx_bytes': dev.get('rx_bytes'),
+                })
+            result = {
+                'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+                'device_count': len(simplified),
+                'devices': simplified
+            }
+        else:
+            result = devices
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_clients":
+        active_only = arguments.get("active_only", True)
+
+        if active_only:
+            clients = await query_unifi('stat/sta')
+        else:
+            clients = await query_unifi('rest/user')
+
+        if isinstance(clients, list):
+            simplified = []
+            for client in clients:
+                simplified.append({
+                    'hostname': client.get('hostname', client.get('name', 'Unknown')),
+                    'mac': client.get('mac'),
+                    'ip': client.get('ip'),
+                    'oui': client.get('oui'),  # manufacturer
+                    'is_wired': client.get('is_wired'),
+                    'network': client.get('network'),
+                    'essid': client.get('essid'),  # WiFi network name
+                    'signal': client.get('signal'),  # WiFi signal strength
+                    'rssi': client.get('rssi'),
+                    'tx_rate': client.get('tx_rate'),
+                    'rx_rate': client.get('rx_rate'),
+                    'tx_bytes': client.get('tx_bytes'),
+                    'rx_bytes': client.get('rx_bytes'),
+                    'uptime': client.get('uptime'),
+                    'first_seen': client.get('first_seen'),
+                    'last_seen': client.get('last_seen'),
+                })
+            result = {
+                'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+                'client_count': len(simplified),
+                'clients': simplified
+            }
+        else:
+            result = clients
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_client_details":
+        mac = arguments["mac"].lower()
+        client = await query_unifi(f'stat/user/{mac}')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'mac': mac,
+            'client': client
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_wlans":
+        wlans = await query_unifi('rest/wlanconf')
+
+        if isinstance(wlans, list):
+            simplified = []
+            for wlan in wlans:
+                simplified.append({
+                    'name': wlan.get('name'),
+                    'enabled': wlan.get('enabled'),
+                    'security': wlan.get('security'),
+                    'wpa_mode': wlan.get('wpa_mode'),
+                    'is_guest': wlan.get('is_guest'),
+                    'vlan': wlan.get('vlan'),
+                    'hide_ssid': wlan.get('hide_ssid'),
+                    'band': wlan.get('wlan_band'),
+                })
+            result = {
+                'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+                'wlan_count': len(simplified),
+                'wlans': simplified
+            }
+        else:
+            result = wlans
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_networks":
+        networks = await query_unifi('rest/networkconf')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'networks': networks
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_port_forwards":
+        forwards = await query_unifi('rest/portforward')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'port_forwards': forwards
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_firewall_rules":
+        rules = await query_unifi('rest/firewallrule')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'firewall_rules': rules
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_firewall_groups":
+        groups = await query_unifi('rest/firewallgroup')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'firewall_groups': groups
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_routing":
+        routes = await query_unifi('rest/routing')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'routes': routes
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_dpi_stats":
+        dpi = await query_unifi('stat/dpi')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'dpi_stats': dpi
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_events":
+        limit = min(arguments.get("limit", 50), 500)
+        events = await query_unifi(f'stat/event?_limit={limit}')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'event_count': len(events) if isinstance(events, list) else 0,
+            'events': events
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_alarms":
+        alarms = await query_unifi('stat/alarm')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'alarm_count': len(alarms) if isinstance(alarms, list) else 0,
+            'alarms': alarms
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_rogues":
+        rogues = await query_unifi('stat/rogueap')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'rogue_count': len(rogues) if isinstance(rogues, list) else 0,
+            'rogues': rogues
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_site_stats":
+        period = arguments.get("period", "daily")
+
+        if period == "hourly":
+            stats = await query_unifi('stat/report/hourly.site')
+        elif period == "monthly":
+            stats = await query_unifi('stat/report/monthly.site')
+        else:
+            stats = await query_unifi('stat/report/daily.site')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'period': period,
+            'stats': stats
+        }
+
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    elif name == "get_unifi_sysinfo":
+        sysinfo = await query_unifi('stat/sysinfo')
+
+        result = {
+            'description': CONFIG.get('unifi', {}).get('description', 'UniFi Network'),
+            'sysinfo': sysinfo
         }
 
         return [TextContent(type="text", text=json.dumps(result, indent=2))]

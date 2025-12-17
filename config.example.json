@@ -66,6 +66,15 @@
     "password": "YOUR_RESTIC_PASSWORD",
     "description": "Restic REST server for backups"
   },
+  "unifi": {
+    "enabled": true,
+    "url": "https://unifi.local:8443",
+    "username": "admin",
+    "password": "YOUR_PASSWORD_HERE",
+    "site": "default",
+    "verify_ssl": false,
+    "description": "UniFi Network Application"
+  },
   "context": {
     "location": "Home Lab",
     "monitoring_strategy": "Automated health checks with alert notifications on failures",
