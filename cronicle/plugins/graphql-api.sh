@@ -13,24 +13,41 @@ set -euo pipefail
 # Read JSON input from Cronicle
 JSON_INPUT=$(cat)
 
+# Find Python interpreter
+PYTHON=""
+if command -v python3 &>/dev/null; then
+    PYTHON="python3"
+elif command -v python &>/dev/null; then
+    PYTHON="python"
+fi
+
 # Parse parameters from JSON using Python (handles complex values like GraphQL queries)
 get_param() {
     local key="$1"
     local default="${2:-}"
-    local value
-    value=$(echo "$JSON_INPUT" | python3 -c "
+
+    if [[ -n "$PYTHON" ]]; then
+        local value
+        value=$(echo "$JSON_INPUT" | $PYTHON -c "
 import json, sys
-try:
-    data = json.loads(sys.stdin.read())
-    params = data.get('params', {})
-    print(params.get('$key', ''))
-except:
-    print('')
-" 2>/dev/null)
-    if [[ -z "$value" ]]; then
-        echo "$default"
-    else
+data = json.loads(sys.stdin.read())
+params = data.get('params', data)
+val = params.get('$key', '')
+print(val if val else '')
+" 2>/dev/null) || true
+        if [[ -n "$value" ]]; then
+            echo "$value"
+            return
+        fi
+    fi
+
+    # Fallback: regex for simple values (won't work for values with escaped quotes)
+    local value
+    value=$(echo "$JSON_INPUT" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+    if [[ -n "$value" ]]; then
         echo "$value"
+    else
+        echo "$default"
     fi
 }
 
