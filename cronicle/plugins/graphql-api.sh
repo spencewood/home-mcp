@@ -13,37 +13,44 @@ set -euo pipefail
 # Read JSON input from Cronicle
 JSON_INPUT=$(cat)
 
-# Find Python interpreter
-PYTHON=""
-if command -v python3 &>/dev/null; then
-    PYTHON="python3"
-elif command -v python &>/dev/null; then
-    PYTHON="python"
-fi
-
-# Parse parameters from JSON using Python (handles complex values like GraphQL queries)
+# Parse JSON string value using awk (handles escaped quotes properly)
 get_param() {
     local key="$1"
     local default="${2:-}"
-
-    if [[ -n "$PYTHON" ]]; then
-        local value
-        value=$(echo "$JSON_INPUT" | $PYTHON -c "
-import json, sys
-data = json.loads(sys.stdin.read())
-params = data.get('params', data)
-val = params.get('$key', '')
-print(val if val else '')
-" 2>/dev/null) || true
-        if [[ -n "$value" ]]; then
-            echo "$value"
-            return
-        fi
-    fi
-
-    # Fallback: regex for simple values (won't work for values with escaped quotes)
     local value
-    value=$(echo "$JSON_INPUT" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+    value=$(echo "$JSON_INPUT" | awk -v key="$key" '
+    {
+        # Find "key": " pattern
+        pattern = "\"" key "\"[[:space:]]*:[[:space:]]*\""
+        if (match($0, pattern)) {
+            start = RSTART + RLENGTH
+            rest = substr($0, start)
+
+            # Parse JSON string, handling escape sequences
+            result = ""
+            i = 1
+            while (i <= length(rest)) {
+                c = substr(rest, i, 1)
+                if (c == "\\") {
+                    i++
+                    nc = substr(rest, i, 1)
+                    if (nc == "n") result = result "\n"
+                    else if (nc == "r") result = result "\r"
+                    else if (nc == "t") result = result "\t"
+                    else result = result nc
+                } else if (c == "\"") {
+                    break
+                } else {
+                    result = result c
+                }
+                i++
+            }
+            print result
+            exit
+        }
+    }')
+
     if [[ -n "$value" ]]; then
         echo "$value"
     else
