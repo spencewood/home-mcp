@@ -13,14 +13,20 @@ set -euo pipefail
 # Read JSON input from Cronicle
 JSON_INPUT=$(cat)
 
-# Parse parameters from JSON using grep/sed (no jq dependency)
-# Extract value for a given key from params object
+# Parse parameters from JSON using Python (handles complex values like GraphQL queries)
 get_param() {
     local key="$1"
     local default="${2:-}"
-    # Look for "key": "value" or "key":"value" patterns within params
     local value
-    value=$(echo "$JSON_INPUT" | grep -o "\"$key\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -1 | sed 's/.*:[[:space:]]*"\([^"]*\)".*/\1/')
+    value=$(echo "$JSON_INPUT" | python3 -c "
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    params = data.get('params', {})
+    print(params.get('$key', ''))
+except:
+    print('')
+" 2>/dev/null)
     if [[ -z "$value" ]]; then
         echo "$default"
     else
