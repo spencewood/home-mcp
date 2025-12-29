@@ -50,6 +50,10 @@ echo ""
 # Update progress
 echo '{"progress":0.1,"description":"Connecting to repository..."}'
 
+# Remove stale locks (older than 30 minutes)
+echo "Checking for stale locks..."
+restic unlock --remove-all 2>/dev/null || true
+
 # Run restic forget with prune for the target host only
 restic forget \
     --host "$TARGET_HOST" \

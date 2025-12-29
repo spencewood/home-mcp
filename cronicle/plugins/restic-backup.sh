@@ -57,6 +57,10 @@ fi
 # Initialize repo if needed (ignore error if already initialized)
 restic init 2>/dev/null || true
 
+# Remove stale locks (older than 30 minutes)
+echo "Checking for stale locks..."
+restic unlock --remove-all 2>/dev/null || true
+
 # Run backup
 echo "Backing up: $BACKUP_PATHS"
 echo "Repository: $RESTIC_REPO_URL"
