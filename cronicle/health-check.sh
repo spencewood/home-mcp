@@ -18,7 +18,9 @@ set -euo pipefail
 
 DISK_SPACE_THRESHOLD=90      # Alert if disk usage exceeds this percentage
 MEMORY_THRESHOLD=95          # Alert if memory usage exceeds this percentage
-SWAP_THRESHOLD=50            # Alert if swap usage exceeds this percentage
+SWAP_THRESHOLD=80            # Alert if swap usage exceeds this percentage (only used with active swapping)
+SWAP_IO_THRESHOLD=100        # Alert if swap I/O exceeds this many pages/sec (si+so from vmstat)
+PSI_MEMORY_THRESHOLD=25      # Alert if memory pressure (PSI some%) exceeds this over 10s window
 LOAD_THRESHOLD=8.0           # Alert if 5-min load average exceeds this
 IOWAIT_THRESHOLD=20          # Alert if I/O wait exceeds this percentage
 CPU_TEMP_THRESHOLD=80        # Alert if CPU temp exceeds this (Celsius)
@@ -141,25 +143,80 @@ check_memory() {
 }
 
 # =============================================================================
-# Check 5: Swap usage
+# Check 5: Memory pressure (smarter than just swap usage)
 # =============================================================================
+#
+# Why not just check swap percentage?
+# - Linux proactively swaps out inactive pages even with free RAM
+# - High swap usage with no active swapping = normal, efficient behavior
+# - What matters is: active swap I/O (thrashing) or actual memory pressure
+#
+# This check uses multiple indicators:
+# 1. PSI (Pressure Stall Information) - best metric on modern kernels (4.20+)
+# 2. Swap I/O rate - pages actively being swapped in/out
+# 3. Fallback: high swap + high I/O wait combined
+#
 
-check_swap() {
-    local swap_info total used percent
+check_memory_pressure() {
+    # Method 1: PSI memory pressure (Linux 4.20+, most accurate)
+    if [ -f /proc/pressure/memory ]; then
+        # PSI format: some avg10=X.XX avg60=X.XX avg300=X.XX total=XXXXX
+        # "some" = percentage of time at least one task was stalled on memory
+        local psi_some
+        psi_some=$(awk '/^some/ {print $2}' /proc/pressure/memory 2>/dev/null | cut -d= -f2 || true)
+
+        if [ -n "$psi_some" ]; then
+            # Compare floats using awk
+            if awk "BEGIN {exit !($psi_some > $PSI_MEMORY_THRESHOLD)}"; then
+                add_issue "WARNING" "Memory pressure detected: PSI some=${psi_some}% (tasks stalled waiting for memory)"
+                return
+            fi
+        fi
+        # PSI available and healthy, no need for fallback checks
+        return
+    fi
+
+    # Method 2: Check swap I/O rate (works on all Linux)
+    # vmstat shows si (swap in) and so (swap out) in pages/sec
+    if command -v vmstat &> /dev/null; then
+        local swap_io
+        # Take second sample for accuracy (first is average since boot)
+        swap_io=$(vmstat 1 2 2>/dev/null | tail -1 | awk '{print $7 + $8}' || true)
+
+        if [ -n "$swap_io" ] && [ "$swap_io" -ge "$SWAP_IO_THRESHOLD" ] 2>/dev/null; then
+            add_issue "WARNING" "Active swap thrashing: ${swap_io} pages/sec swapped"
+            return
+        fi
+    fi
+
+    # Method 3: Fallback - high swap usage + high I/O wait combined
+    # Only alert if BOTH conditions are true (suggests actual pressure)
+    local swap_info total used swap_percent
     swap_info=$(free 2>/dev/null | grep Swap || true)
     [ -z "$swap_info" ] && return
+
     total=$(echo "$swap_info" | awk '{print $2}')
     used=$(echo "$swap_info" | awk '{print $3}')
 
     # Skip if no swap configured
-    if [ "$total" -eq 0 ] 2>/dev/null; then
-        return
-    fi
+    [ "$total" -eq 0 ] 2>/dev/null && return
 
-    percent=$((used * 100 / total))
+    swap_percent=$((used * 100 / total))
 
-    if [ "$percent" -ge "$SWAP_THRESHOLD" ]; then
-        add_issue "WARNING" "Swap usage at ${percent}% (possible memory pressure)"
+    # Only proceed if swap is high
+    if [ "$swap_percent" -ge "$SWAP_THRESHOLD" ]; then
+        # Check if I/O wait is also elevated (suggests memory-related disk activity)
+        if command -v iostat &> /dev/null; then
+            local iowait
+            iowait=$(iostat -c 1 2 2>/dev/null | tail -1 | awk '{print $4}' || true)
+
+            if [ -n "$iowait" ]; then
+                # If swap is high AND I/O wait > 5%, likely memory pressure
+                if awk "BEGIN {exit !($iowait > 5)}"; then
+                    add_issue "WARNING" "Possible memory pressure: swap at ${swap_percent}% with ${iowait}% I/O wait"
+                fi
+            fi
+        fi
     fi
 }
 
@@ -347,7 +404,7 @@ check_smart
 check_ssd_wear
 check_disk_space
 check_memory
-check_swap
+check_memory_pressure
 check_load
 check_iowait
 check_cpu_temp
