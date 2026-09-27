@@ -20,7 +20,7 @@ services:
       # Plugins from repo (read-only, shared across all hosts)
       - ./plugins:/opt/cronicle/plugins:ro
       # System access for monitoring
-      - /proc:/proc:ro
+      # - /proc:/proc:ro
       - /sys:/sys:ro
       - /dev:/dev:ro
       # SSH for remote operations
