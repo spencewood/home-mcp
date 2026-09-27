@@ -12,4 +12,6 @@ RUN apk add --no-cache \
     procps \
     util-linux \
     coreutils \
-    bash
+    bash \
+    sqlite \
+    postgresql16-client
